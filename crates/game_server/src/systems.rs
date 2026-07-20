@@ -47,6 +47,7 @@ pub fn on_client_connected(
     mut commands: Commands,
     mut client_query: Query<(&RemoteId, Has<ClientOf>, &mut MessageSender<Welcome>)>,
     mut next_color: ResMut<NextPlayerColor>,
+    existing_players: Query<(Entity, &player::Player)>,
 ) {
     let client_entity = trigger.entity;
     let Ok((remote_id, _is_client, mut welcome_sender)) = client_query.get_mut(client_entity)
@@ -58,6 +59,17 @@ pub fn on_client_connected(
         _ => return,
     };
     let player_id = PlayerId::new(client_id);
+
+    // A reconnecting client may still have a stale player entity from a
+    // previous session (e.g. the old link has not timed out yet); remove it so
+    // the world never holds two players with the same id.
+    for (entity, player) in existing_players.iter() {
+        if player.id == player_id {
+            info!("Despawning stale player {player_id} from previous session");
+            commands.entity(entity).try_despawn();
+        }
+    }
+
     let player_name = format!("Player {client_id}");
     let color = PlayerColor(next_color.0);
     next_color.0 = next_color.0.wrapping_add(1);
@@ -393,5 +405,52 @@ mod tests {
         }
 
         assert_eq!(colors, vec![PlayerColor(0), PlayerColor(1)]);
+    }
+
+    #[test]
+    fn on_client_connected_replaces_stale_player_with_same_id() {
+        let mut app = build_test_app();
+        app.add_observer(on_client_connected);
+        app.add_observer(handle_new_client_link);
+
+        let first_client = app
+            .world_mut()
+            .spawn((Connected, RemoteId(PeerId::Netcode(42)), ClientOf))
+            .id();
+        app.world_mut().run_schedule(FixedUpdate);
+        let first_player = app
+            .world()
+            .get::<ClientPlayer>(first_client)
+            .unwrap()
+            .player_entity;
+
+        // Same client_id reconnects on a new link before the old one expired
+        let second_client = app
+            .world_mut()
+            .spawn((Connected, RemoteId(PeerId::Netcode(42)), ClientOf))
+            .id();
+        app.world_mut().run_schedule(FixedUpdate);
+        let second_player = app
+            .world()
+            .get::<ClientPlayer>(second_client)
+            .unwrap()
+            .player_entity;
+
+        assert!(
+            app.world().get_entity(first_player).is_err(),
+            "stale player should be despawned"
+        );
+        let matching: Vec<_> = app
+            .world_mut()
+            .query::<&player::Player>()
+            .iter(app.world())
+            .filter(|p| p.id == PlayerId::new(42))
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "exactly one player with the id should remain"
+        );
+        assert_ne!(first_player, second_player);
     }
 }

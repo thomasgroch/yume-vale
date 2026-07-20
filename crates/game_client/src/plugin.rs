@@ -18,7 +18,12 @@ use crate::camera::{
 use crate::config::ClientConfig;
 use crate::decorations::spawn_decorations;
 use crate::input::{InputState, gather_input};
-use crate::snapshot::LocalPlayerId;
+
+/// Tracks the local player's assigned ID (set on receiving Welcome).
+#[derive(Resource, Default)]
+pub struct LocalPlayerId {
+    pub id: Option<game_core::id::PlayerId>,
+}
 
 #[derive(Default)]
 pub struct ClientPlugin {
@@ -49,6 +54,7 @@ impl Plugin for ClientPlugin {
                 mark_local_player_visuals,
                 gather_input,
                 rotate_camera_input,
+                retry_connect_when_disconnected,
             ),
         );
         app.add_systems(
@@ -139,7 +145,10 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
             .unwrap_or(false);
 
         if use_ws {
-            let ws_addr: SocketAddr = "127.0.0.1:5002".parse().expect("invalid WS server address");
+            let ws_addr: SocketAddr = config
+                .websocket_addr
+                .parse()
+                .expect("invalid websocket_addr in ClientConfig");
             let ws_auth = Authentication::Manual {
                 server_addr: ws_addr,
                 client_id,
@@ -164,7 +173,10 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
                 ))
                 .id()
         } else {
-            let wt_addr: SocketAddr = "127.0.0.1:5001".parse().expect("invalid WT server address");
+            let wt_addr: SocketAddr = config
+                .web_transport_addr
+                .parse()
+                .expect("invalid web_transport_addr in ClientConfig");
             let wt_auth = Authentication::Manual {
                 server_addr: wt_addr,
                 client_id,
@@ -192,6 +204,32 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
     };
 
     commands.entity(entity).trigger(|e| Connect { entity: e });
+}
+
+const RECONNECT_BACKOFF_S: f32 = 2.0;
+
+type DisconnectedClients<'w, 's> =
+    Query<'w, 's, Entity, (With<Client>, With<Disconnected>, Without<Connected>)>;
+
+/// Re-triggers `Connect` (with backoff) on client entities that lost their
+/// connection. The netcode server silently absorbs a quick reconnect while the
+/// old session is still alive, so a single failed attempt must not be final.
+fn retry_connect_when_disconnected(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut timer: Local<Option<Timer>>,
+    clients: DisconnectedClients,
+) {
+    let timer =
+        timer.get_or_insert_with(|| Timer::from_seconds(RECONNECT_BACKOFF_S, TimerMode::Repeating));
+    timer.tick(time.delta());
+    if !timer.just_finished() {
+        return;
+    }
+    for entity in clients.iter() {
+        info!("retrying connection for disconnected client {entity:?}");
+        commands.entity(entity).trigger(|e| Connect { entity: e });
+    }
 }
 
 fn handle_welcome(
@@ -302,6 +340,7 @@ mod tests {
             config: ClientConfig {
                 server_addr: "192.168.1.100:8080".into(),
                 player_name: "Yume".into(),
+                ..Default::default()
             },
         };
         assert_eq!(plugin.config.server_addr, "192.168.1.100:8080");
@@ -342,6 +381,46 @@ mod tests {
         assert_ne!(a, 0);
         assert_ne!(b, 0);
         assert_ne!(a, b, "two client instances must not share a netcode id");
+    }
+
+    #[test]
+    fn retry_connect_retriggers_after_backoff() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_systems(Update, retry_connect_when_disconnected);
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+        app.add_observer(move |_: On<Connect>| {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        app.world_mut()
+            .spawn((Client::default(), Disconnected::default()));
+
+        app.update();
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            0,
+            "no retry before the backoff elapses"
+        );
+
+        // Virtual time clamps delta to max_delta (250ms default); raise it so a
+        // single ManualDuration can exceed the 2s backoff.
+        app.world_mut()
+            .resource_mut::<Time<Virtual>>()
+            .set_max_delta(Duration::from_secs(10));
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            Duration::from_secs(3),
+        ));
+        app.update();
+        assert!(
+            counter.load(Ordering::SeqCst) >= 1,
+            "Connect should be re-triggered after the backoff"
+        );
     }
 
     #[test]

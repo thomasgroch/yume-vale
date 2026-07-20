@@ -12,15 +12,16 @@ pub use systems::*;
 #[cfg(test)]
 pub fn build_test_app() -> bevy::prelude::App {
     use bevy::prelude::*;
-    use bevy_replicon::shared::{AuthMethod, RepliconSharedPlugin};
     use game_protocol::ProtocolPlugin;
     use player::PlayerPlugin;
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(bevy::state::app::StatesPlugin);
-    app.add_plugins(RepliconSharedPlugin {
-        auth_method: AuthMethod::None,
+    // Mirror production plugin order (ServerPlugins first): ProtocolPlugin's
+    // replicate() calls need resources from lightyear's replicon backend.
+    app.add_plugins(lightyear::prelude::server::ServerPlugins {
+        tick_duration: core::time::Duration::from_secs_f64(1.0 / 30.0),
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.init_resource::<systems::NextPlayerColor>();
