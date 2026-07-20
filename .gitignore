@@ -12,3 +12,4 @@
 
 # Trunk wasm client build output
 /dist/
+apps/client/dist/

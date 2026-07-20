@@ -3,15 +3,13 @@ pub mod config;
 pub mod decorations;
 pub mod input;
 pub mod plugin;
-pub mod snapshot;
 
 pub use camera::{CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera};
 pub use config::{ClientConfig, build_client_config};
 pub use decorations::spawn_decorations;
 pub use game_protocol::{PRIVATE_KEY, PROTOCOL_ID};
 pub use input::{InputState, gather_input, read_keyboard_input};
-pub use plugin::ClientPlugin;
-pub use snapshot::LocalPlayerId;
+pub use plugin::{ClientPlugin, LocalPlayerId};
 
 #[cfg(test)]
 mod tests {
