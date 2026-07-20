@@ -10,7 +10,7 @@ use lightyear::prelude::*;
 use player::{LocalPlayer, PlayerPlugin};
 
 #[cfg(target_arch = "wasm32")]
-use lightyear::prelude::client::WebTransportClientIo;
+use lightyear::prelude::client::{WebSocketClientIo, WebSocketScheme, WebTransportClientIo};
 
 use crate::camera::{
     CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera, spawn_ground,
@@ -115,7 +115,8 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
     };
 
     let netcode_config = NetcodeConfig::default();
-    let client = NetcodeClient::new(auth, netcode_config).expect("failed to create NetcodeClient");
+    let client =
+        NetcodeClient::new(auth, netcode_config.clone()).expect("failed to create NetcodeClient");
 
     #[cfg(not(target_arch = "wasm32"))]
     let entity = commands
@@ -130,21 +131,57 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
         ))
         .id();
 
-    // Wasm: use WebTransport by default (Phase 2 will add ?transport=ws selection)
+    // Wasm: use WebTransport by default (127.0.0.1:5001); ?transport=ws -> WebSocket (127.0.0.1:5002)
     #[cfg(target_arch = "wasm32")]
-    let entity = commands
-        .spawn((
-            Client::default(),
-            LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
-            PeerAddr(addr),
-            Link::new(None),
-            client,
-            WebTransportClientIo {
-                certificate_digest: String::new(),
-            },
-            ReplicationReceiver,
-        ))
-        .id();
+    let entity = {
+        let use_ws = web_sys::window()
+            .and_then(|w| w.location().search().ok())
+            .map(|q| q.contains("transport=ws"))
+            .unwrap_or(false);
+
+        if use_ws {
+            let ws_addr: SocketAddr = "127.0.0.1:5002".parse().expect("invalid WS server address");
+            let ws_auth = Authentication::Manual {
+                server_addr: ws_addr,
+                client_id,
+                private_key: PRIVATE_KEY,
+                protocol_id: PROTOCOL_ID,
+            };
+            let ws_client = NetcodeClient::new(ws_auth, netcode_config)
+                .expect("failed to create NetcodeClient");
+            commands
+                .spawn((
+                    Client::default(),
+                    LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                    PeerAddr(ws_addr),
+                    Link::new(None),
+                    ws_client,
+                    WebSocketClientIo::from_addr(
+                        #[allow(clippy::default_constructed_unit_structs)]
+                        aeronet_websocket::client::ClientConfig::default(),
+                        WebSocketScheme::Plain,
+                    ),
+                    ReplicationReceiver,
+                ))
+                .id()
+        } else {
+            commands
+                .spawn((
+                    Client::default(),
+                    LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                    PeerAddr(addr),
+                    Link::new(None),
+                    client,
+                    WebTransportClientIo {
+                        certificate_digest: include_str!("../../../certs/digest.txt")
+                            .trim()
+                            .to_string(),
+                    },
+                    ReplicationReceiver,
+                ))
+                .id()
+        }
+    };
 
     commands.entity(entity).trigger(|e| Connect { entity: e });
 }

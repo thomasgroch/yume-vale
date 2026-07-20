@@ -12,6 +12,9 @@ game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }
 tracing = { workspace = true }
+aeronet_websocket = "0.21.0"
+aeronet_webtransport = "0.21.0"
+rustls-pemfile = "2.2"
 
 [dev-dependencies]
 serde_json = "1"

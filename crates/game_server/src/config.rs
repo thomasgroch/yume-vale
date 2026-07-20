@@ -5,8 +5,12 @@ use game_core::constants::{MAX_PLAYERS, TICK_RATE_HZ};
 pub struct ServerConfig {
     /// Host to bind to.
     pub host: String,
-    /// Port to bind to.
+    /// Port for the UDP/Netcode listener.
     pub port: u16,
+    /// Port for the WebTransport listener (browser via WT).
+    pub web_transport_port: u16,
+    /// Port for the WebSocket listener (browser via WS fallback).
+    pub websocket_port: u16,
     /// Maximum number of concurrent players.
     pub max_players: usize,
     /// Simulation tick rate in Hz.
@@ -18,6 +22,8 @@ impl Default for ServerConfig {
         Self {
             host: "127.0.0.1".to_string(),
             port: 5000,
+            web_transport_port: 5001,
+            websocket_port: 5002,
             max_players: MAX_PLAYERS,
             tick_rate: TICK_RATE_HZ,
         }
@@ -45,6 +51,8 @@ mod tests {
         assert_eq!(cfg.tick_rate, TICK_RATE_HZ);
         assert_eq!(cfg.host, "127.0.0.1");
         assert_eq!(cfg.port, 5000);
+        assert_eq!(cfg.web_transport_port, 5001);
+        assert_eq!(cfg.websocket_port, 5002);
     }
 
     #[test]
@@ -52,6 +60,8 @@ mod tests {
         let cfg = build_server_config("0.0.0.0", 12345);
         assert_eq!(cfg.host, "0.0.0.0");
         assert_eq!(cfg.port, 12345);
+        assert_eq!(cfg.web_transport_port, 5001);
+        assert_eq!(cfg.websocket_port, 5002);
         assert_eq!(cfg.max_players, MAX_PLAYERS);
         assert_eq!(cfg.tick_rate, TICK_RATE_HZ);
     }
