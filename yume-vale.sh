@@ -88,8 +88,9 @@ case "$CMD" in
         SERVER_PID=$!
         trap 'kill "$SERVER_PID" 2>/dev/null; kill %1 2>/dev/null; pkill -f "trunk" 2>/dev/null || true' EXIT INT TERM
         sleep 2
-        # Serve wasm client with rustup toolchain
+        # Serve wasm client with rustup toolchain (trunk must run from the crate dir)
         echo "=== Starting trunk dev server ==="
+        cd "$ROOT/apps/client"
         env PATH="$HOME/.rustup/toolchains/1.96.0-aarch64-apple-darwin/bin:$PATH" \
             trunk serve --address 127.0.0.1 --port 8080 --open
         ;;

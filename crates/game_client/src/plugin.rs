@@ -100,36 +100,35 @@ fn random_client_id() -> u64 {
 }
 
 fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
-    let addr: SocketAddr = config
-        .server_addr
-        .parse()
-        .expect("invalid server address in ClientConfig");
-
     let client_id = derive_client_id();
-
-    let auth = Authentication::Manual {
-        server_addr: addr,
-        client_id,
-        private_key: PRIVATE_KEY,
-        protocol_id: PROTOCOL_ID,
-    };
-
     let netcode_config = NetcodeConfig::default();
-    let client =
-        NetcodeClient::new(auth, netcode_config.clone()).expect("failed to create NetcodeClient");
 
     #[cfg(not(target_arch = "wasm32"))]
-    let entity = commands
-        .spawn((
-            Client::default(),
-            LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
-            PeerAddr(addr),
-            Link::new(None),
-            client,
-            UdpIo::default(),
-            ReplicationReceiver,
-        ))
-        .id();
+    let entity = {
+        let addr: SocketAddr = config
+            .server_addr
+            .parse()
+            .expect("invalid server address in ClientConfig");
+        let auth = Authentication::Manual {
+            server_addr: addr,
+            client_id,
+            private_key: PRIVATE_KEY,
+            protocol_id: PROTOCOL_ID,
+        };
+        let client = NetcodeClient::new(auth, netcode_config.clone())
+            .expect("failed to create NetcodeClient");
+        commands
+            .spawn((
+                Client::default(),
+                LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                PeerAddr(addr),
+                Link::new(None),
+                client,
+                UdpIo::default(),
+                ReplicationReceiver,
+            ))
+            .id()
+    };
 
     // Wasm: use WebTransport by default (127.0.0.1:5001); ?transport=ws -> WebSocket (127.0.0.1:5002)
     #[cfg(target_arch = "wasm32")]
@@ -165,13 +164,22 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
                 ))
                 .id()
         } else {
+            let wt_addr: SocketAddr = "127.0.0.1:5001".parse().expect("invalid WT server address");
+            let wt_auth = Authentication::Manual {
+                server_addr: wt_addr,
+                client_id,
+                private_key: PRIVATE_KEY,
+                protocol_id: PROTOCOL_ID,
+            };
+            let wt_client = NetcodeClient::new(wt_auth, netcode_config)
+                .expect("failed to create NetcodeClient");
             commands
                 .spawn((
                     Client::default(),
                     LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
-                    PeerAddr(addr),
+                    PeerAddr(wt_addr),
                     Link::new(None),
-                    client,
+                    wt_client,
                     WebTransportClientIo {
                         certificate_digest: include_str!("../../../certs/digest.txt")
                             .trim()
