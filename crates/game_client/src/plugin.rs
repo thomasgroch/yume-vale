@@ -9,6 +9,9 @@ use lightyear::prelude::client::{ClientPlugins, NetcodeClient};
 use lightyear::prelude::*;
 use player::{LocalPlayer, PlayerPlugin};
 
+#[cfg(target_arch = "wasm32")]
+use lightyear::prelude::client::WebTransportClientIo;
+
 use crate::camera::{
     CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera, spawn_ground,
 };
@@ -56,22 +59,44 @@ impl Plugin for ClientPlugin {
 }
 
 /// Unique netcode client id per instance: the server drops connection requests
-/// with an already-connected id (anti-spoofing). `YUME_CLIENT_ID` env overrides for tests.
+/// with an already-connected id (anti-spoofing). On native, `YUME_CLIENT_ID` env
+/// overrides for tests. On wasm, a random id is generated via getrandom.
 fn derive_client_id() -> u64 {
-    client_id_from_env(std::env::var("YUME_CLIENT_ID").ok().as_deref())
-        .unwrap_or_else(time_based_client_id)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        client_id_from_env(std::env::var("YUME_CLIENT_ID").ok().as_deref())
+            .unwrap_or_else(time_based_client_id)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        random_client_id()
+    }
 }
 
+/// Parses `YUME_CLIENT_ID` env override. Returns `None` if absent or invalid.
+/// Only used on native (env vars unavailable on wasm).
+#[cfg(not(target_arch = "wasm32"))]
 fn client_id_from_env(raw: Option<&str>) -> Option<u64> {
     raw.and_then(|s| s.parse::<u64>().ok()).map(|id| id.max(1))
 }
 
+/// Native: time + process-id based client id (not entropy-safe, but unique per
+/// local process instance — good enough for dev).
+#[cfg(not(target_arch = "wasm32"))]
 fn time_based_client_id() -> u64 {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0x59c3_7a6e);
     (nanos ^ ((std::process::id() as u64) << 32)).max(1)
+}
+
+/// Wasm: random client id via getrandom (SystemTime and process::id unavailable).
+#[cfg(target_arch = "wasm32")]
+fn random_client_id() -> u64 {
+    let mut buf = [0u8; 8];
+    getrandom::fill(&mut buf).expect("getrandom failed to generate client id");
+    u64::from_le_bytes(buf).max(1)
 }
 
 fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
@@ -92,6 +117,7 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
     let netcode_config = NetcodeConfig::default();
     let client = NetcodeClient::new(auth, netcode_config).expect("failed to create NetcodeClient");
 
+    #[cfg(not(target_arch = "wasm32"))]
     let entity = commands
         .spawn((
             Client::default(),
@@ -100,6 +126,22 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
             Link::new(None),
             client,
             UdpIo::default(),
+            ReplicationReceiver,
+        ))
+        .id();
+
+    // Wasm: use WebTransport by default (Phase 2 will add ?transport=ws selection)
+    #[cfg(target_arch = "wasm32")]
+    let entity = commands
+        .spawn((
+            Client::default(),
+            LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+            PeerAddr(addr),
+            Link::new(None),
+            client,
+            WebTransportClientIo {
+                certificate_digest: String::new(),
+            },
             ReplicationReceiver,
         ))
         .id();
@@ -227,22 +269,26 @@ mod tests {
         assert_eq!(cfg.player_name, "Player");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn client_id_from_env_parses_valid_id() {
         assert_eq!(client_id_from_env(Some("42")), Some(42));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn client_id_from_env_rejects_zero() {
         assert_eq!(client_id_from_env(Some("0")), Some(1));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn client_id_from_env_ignores_garbage() {
         assert_eq!(client_id_from_env(Some("not-a-number")), None);
         assert_eq!(client_id_from_env(None), None);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn time_based_client_id_is_nonzero_and_unique() {
         let a = time_based_client_id();

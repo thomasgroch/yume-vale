@@ -7,10 +7,17 @@ rust-version.workspace = true
 
 [dependencies]
 bevy = { workspace = true, features = ["3d"] }
-lightyear = { workspace = true, features = ["client", "udp", "netcode", "std", "replication", "interpolation"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lightyear = { workspace = true, features = ["client", "udp", "netcode", "std", "replication", "interpolation"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+lightyear = { workspace = true, features = ["client", "netcode", "replication", "interpolation", "std", "webtransport", "websocket"] }
+web-sys = { version = "0.3", features = ["Window", "Location"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [dev-dependencies]
 serde_json = "1"
