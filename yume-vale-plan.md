@@ -297,6 +297,8 @@ O servidor roda **3 listeners no mesmo processo** (uma entidade servidora por tr
 - `client_id` no wasm via `getrandom` (SystemTime/PID não existem); rustflags wasm em `.cargo/config.toml` (`getrandom_backend="wasm_js"`, `web_sys_unstable_apis`) — target-specific, não afeta nativo
 - Toolchain wasm: rustup 1.96.0 (mesma versão do cargo Homebrew); o script injeta o PATH só nos comandos web
 - Verificado ao vivo: 2 browsers (WebTransport) + 1 cliente nativo (UDP) no mesmo servidor, cores consistentes
+- Reconexão resiliente: cliente retenta `Connect` a cada 2s enquanto desconectado; servidor despawna player obsoleto com o mesmo `PlayerId` antes de spawnar (sem duplicatas/fantasmas)
+- Cliente web: canvas ocupa a janela inteira (`fit_canvas_to_parent`); endereços por transporte em `ClientConfig`
 
 **Pendente para produção:** deploy Cloudflare Pages, TLS real (WebTransport exige; Caddy não faz proxy de datagramas QUIC — avaliar terminação TLS no próprio game server), fallback automático WT→WS.
 
