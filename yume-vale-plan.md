@@ -281,6 +281,25 @@ cargo build --release --target wasm32-unknown-unknown -p client --features web
 
 Processar `.wasm`, comprimir assets, publicar em Cloudflare Pages. Cliente web conecta ao servidor por WebTransport.
 
+#### ✅ Implementado (20/07/2026) — dev local com cross-play
+
+O servidor roda **3 listeners no mesmo processo** (uma entidade servidora por transporte, todas com `NetcodeServer`):
+
+| Transporte | Porta | Clientes | TLS |
+|---|---|---|---|
+| UDP + Netcode | 5000 | nativos (Win/Linux/macOS) | netcode |
+| WebTransport (HTTP/3) | 5001 | browser (padrão) | self-signed dev, hash pinning |
+| WebSocket (`ws://`) | 5002 | browser (fallback via `?transport=ws`) | nenhum (localhost) |
+
+- Pipeline: `trunk serve` a partir de `apps/client` (`./yume-vale.sh web` — gera cert se velho, sobe o servidor, serve em `http://127.0.0.1:8080`)
+- Certificado dev: `cargo run -p tools -- generate-cert` → `certs/{server.pem,key.pem,digest.txt}` (gitignored, validade 13 dias — limite do browser para hash pinning; o script regenera após 7)
+- O digest é embutido no wasm via `include_str!` (cert estável em disco → digest estável)
+- `client_id` no wasm via `getrandom` (SystemTime/PID não existem); rustflags wasm em `.cargo/config.toml` (`getrandom_backend="wasm_js"`, `web_sys_unstable_apis`) — target-specific, não afeta nativo
+- Toolchain wasm: rustup 1.96.0 (mesma versão do cargo Homebrew); o script injeta o PATH só nos comandos web
+- Verificado ao vivo: 2 browsers (WebTransport) + 1 cliente nativo (UDP) no mesmo servidor, cores consistentes
+
+**Pendente para produção:** deploy Cloudflare Pages, TLS real (WebTransport exige; Caddy não faz proxy de datagramas QUIC — avaliar terminação TLS no próprio game server), fallback automático WT→WS.
+
 ### Servidor
 ```bash
 cargo build --release -p server --no-default-features --features server
