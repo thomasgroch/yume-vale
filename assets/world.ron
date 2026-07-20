@@ -1,0 +1,52 @@
+(
+    resources: [
+        (
+            kind: Wood,
+            respawn_time_s: 30.0,
+            quantity: 5,
+            model_id: "resource.wood",
+        ),
+        (
+            kind: Crystal,
+            respawn_time_s: 60.0,
+            quantity: 2,
+            model_id: "resource.crystal",
+        ),
+        (
+            kind: Berry,
+            respawn_time_s: 20.0,
+            quantity: 3,
+            model_id: "resource.berry",
+        ),
+    ],
+    creatures: [
+        (
+            kind: Fluffball,
+            position: ((10.0, 0.0, 5.0)),
+            wander_radius: 8.0,
+            model_id: "creature.fluffball",
+        ),
+        (
+            kind: Glimmerwing,
+            position: ((-5.0, 0.0, 15.0)),
+            wander_radius: 6.0,
+            model_id: "creature.glimmerwing",
+        ),
+    ],
+    quests: [
+        (
+            id: (1),
+            title: "A Berry Good Start",
+            description: "Collect some berries for the village elder.",
+            objectives: [
+                (
+                    kind: Collect(Berry),
+                    target_quantity: 5,
+                ),
+            ],
+            rewards: [
+                Resource(Fiber),
+            ],
+        ),
+    ],
+)

@@ -1,0 +1,16 @@
+[package]
+name = "client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "client"
+path = "src/main.rs"
+
+[dependencies]
+game_client = { workspace = true }
+bevy = { workspace = true, features = ["3d", "ui"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

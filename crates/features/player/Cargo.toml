@@ -1,0 +1,16 @@
+[package]
+name = "player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["3d"] }
+lightyear = { workspace = true, features = ["replication"] }
+serde = { workspace = true }
+game_core = { workspace = true }
+game_protocol = { workspace = true }
+
+[dev-dependencies]
+serde_json = "1"
