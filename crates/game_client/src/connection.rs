@@ -102,7 +102,7 @@ fn build_netcode_client(
     }
 }
 
-pub fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
+pub fn start_connection(commands: &mut Commands, config: &ClientConfig) {
     let client_id = derive_client_id();
     // 10s handshake window: first run after a rebuild stalls ~4s compiling
     // Metal shaders, which used to trip the 3s default and ghost the session.

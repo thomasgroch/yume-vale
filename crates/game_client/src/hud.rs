@@ -10,12 +10,15 @@ pub struct ReconnectButton;
 
 pub fn spawn_hud(mut commands: Commands) {
     commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
-            ..default()
-        })
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(10.0),
+                left: Val::Px(10.0),
+                ..default()
+            },
+            ZIndex(-1),
+        ))
         .with_children(|parent| {
             parent.spawn((
                 Text::new("..."),

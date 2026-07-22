@@ -9,12 +9,11 @@ use crate::camera::{
     CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera, spawn_ground,
 };
 use crate::config::ClientConfig;
-use crate::connection::{
-    LocalPlayerId, handle_welcome, retry_connect_when_disconnected, setup_client,
-};
+use crate::connection::{LocalPlayerId, handle_welcome, retry_connect_when_disconnected};
 use crate::decorations::spawn_decorations;
 use crate::hud::{reconnect_button, spawn_hud, update_hud_status};
 use crate::input::{InputState, gather_input};
+use crate::menu::{AppFlow, play_button, play_button_hover, spawn_menu};
 use crate::visuals::{
     attach_player_visuals, mark_local_player_visuals, sync_position_to_transform,
 };
@@ -34,6 +33,7 @@ impl Plugin for ClientPlugin {
         app.init_resource::<InputState>();
         app.init_resource::<LocalPlayerId>();
         app.init_resource::<CameraOrbit>();
+        app.init_resource::<AppFlow>();
 
         app.add_systems(
             Startup,
@@ -42,7 +42,7 @@ impl Plugin for ClientPlugin {
                 spawn_ground,
                 spawn_decorations,
                 spawn_hud,
-                setup_client,
+                spawn_menu,
             ),
         );
 
@@ -57,25 +57,14 @@ impl Plugin for ClientPlugin {
                 retry_connect_when_disconnected,
                 update_hud_status,
                 reconnect_button,
+                play_button,
+                play_button_hover,
             ),
         );
         app.add_systems(
             PostUpdate,
             (sync_position_to_transform, follow_local_player).chain(),
         );
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use crate::menu::{PlayGame, on_play_game, spawn_menu};
-            use bevy_cef::prelude::{CefPlugin, JsEmitEventPlugin};
-
-            app.add_plugins((
-                CefPlugin::default(),
-                JsEmitEventPlugin::<PlayGame>::default(),
-            ));
-            app.add_systems(Startup, spawn_menu);
-            app.add_observer(on_play_game);
-        }
     }
 }
 

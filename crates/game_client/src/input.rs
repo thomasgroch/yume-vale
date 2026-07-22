@@ -52,9 +52,13 @@ pub fn read_keyboard_input(
 pub fn gather_input(
     keys: Res<ButtonInput<KeyCode>>,
     orbit: Res<CameraOrbit>,
+    flow: Res<crate::menu::AppFlow>,
     mut state: ResMut<InputState>,
     mut senders: Query<&mut MessageSender<ClientInput>>,
 ) {
+    if *flow == crate::menu::AppFlow::Menu {
+        return;
+    }
     let (movement, run, _action) = read_keyboard_input(&keys, orbit.yaw);
     state.tick = state.tick.wrapping_add(1);
 

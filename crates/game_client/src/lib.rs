@@ -4,7 +4,6 @@ pub mod connection;
 pub mod decorations;
 pub mod hud;
 pub mod input;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod menu;
 pub mod plugin;
 pub mod visuals;

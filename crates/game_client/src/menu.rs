@@ -1,131 +1,232 @@
-#![cfg(not(target_arch = "wasm32"))]
-
 use bevy::prelude::*;
-use bevy_cef::prelude::*;
 
-#[derive(Component)]
-pub struct MenuWebview;
+use crate::config::ClientConfig;
+use crate::connection::start_connection;
 
-#[derive(serde::Deserialize)]
-pub struct PlayGame {}
-
-const MENU_HTML: &str = r#"<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    background: linear-gradient(160deg, #ffe3ee 0%, #e3f0ff 55%, #e4ffe9 100%);
-    overflow: hidden;
-    user-select: none;
-  }
-  .bubble {
-    position: absolute;
-    border-radius: 50%;
-    opacity: 0.35;
-  }
-  h1 {
-    font-size: 88px;
-    font-weight: 800;
-    color: #e06a95;
-    letter-spacing: 2px;
-    text-shadow: 0 4px 0 rgba(255,255,255,0.7), 0 12px 28px rgba(224,106,149,0.25);
-  }
-  p.sub {
-    margin-top: 6px;
-    font-size: 22px;
-    color: #6d7f94;
-  }
-  button {
-    margin-top: 56px;
-    padding: 18px 72px;
-    font-size: 28px;
-    font-weight: 700;
-    color: #fff;
-    background: #ff8fab;
-    border: none;
-    border-radius: 999px;
-    cursor: pointer;
-    box-shadow: 0 8px 0 #e06a95, 0 16px 32px rgba(224,106,149,0.35);
-    transition: transform 0.08s ease, box-shadow 0.08s ease;
-  }
-  button:hover { background: #ff7ba0; transform: translateY(-2px); }
-  button:active { transform: translateY(4px); box-shadow: 0 2px 0 #e06a95; }
-  p.controls {
-    position: absolute;
-    bottom: 28px;
-    font-size: 15px;
-    color: #8b99a8;
-  }
-</style>
-</head>
-<body>
-  <div class="bubble" style="width:180px;height:180px;background:#ffc7da;top:8%;left:12%"></div>
-  <div class="bubble" style="width:120px;height:120px;background:#c7e5ff;top:64%;left:78%"></div>
-  <div class="bubble" style="width:90px;height:90px;background:#cdf5d8;top:22%;left:82%"></div>
-  <div class="bubble" style="width:70px;height:70px;background:#fff3c2;top:70%;left:15%"></div>
-
-  <h1>Yume Vale</h1>
-  <p class="sub">um vale fofo para passear com amigos</p>
-  <button onclick="window.cef.emit('PlayGame', {})">Jogar</button>
-
-  <p class="controls">WASD ou setas: mover &nbsp;·&nbsp; Shift: correr &nbsp;·&nbsp; Q/E: girar a câmera</p>
-  <script>
-    document.body.addEventListener('click', () => window.cef.emit('PlayGame', {}));
-  </script>
-</body>
-</html>"#;
-
-pub fn spawn_menu(mut commands: Commands, mut materials: ResMut<Assets<WebviewUiMaterial>>) {
-    commands.spawn((
-        WebviewSource::inline(MENU_HTML),
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            ..default()
-        },
-        MaterialNode(materials.add(WebviewUiMaterial::default())),
-        MenuWebview,
-    ));
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppFlow {
+    #[default]
+    Menu,
+    Playing,
 }
 
-pub fn on_play_game(
-    _trigger: On<Receive<PlayGame>>,
+#[derive(Component)]
+pub struct MenuRoot;
+
+#[derive(Component)]
+pub struct PlayButton;
+
+const MENU_BG: Color = Color::srgb(1.0, 0.90, 0.94);
+const TITLE: Color = Color::srgb(0.88, 0.42, 0.58);
+const SUBTLE: Color = Color::srgb(0.43, 0.50, 0.58);
+const BUTTON: Color = Color::srgb(1.0, 0.56, 0.67);
+const BUTTON_HOVER: Color = Color::srgb(1.0, 0.48, 0.60);
+
+pub fn spawn_menu(mut commands: Commands) {
+    let bubble = |size: f32, top: f32, left: f32, color: Color| {
+        (
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Px(size),
+                height: Val::Px(size),
+                top: Val::Px(top),
+                left: Val::Px(left),
+                border_radius: BorderRadius::MAX,
+                ..default()
+            },
+            BackgroundColor(color),
+        )
+    };
+
+    commands
+        .spawn((
+            MenuRoot,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(MENU_BG),
+        ))
+        .with_children(|root| {
+            root.spawn(bubble(
+                180.0,
+                60.0,
+                100.0,
+                Color::srgba(1.0, 0.78, 0.85, 0.5),
+            ));
+            root.spawn(bubble(
+                120.0,
+                420.0,
+                900.0,
+                Color::srgba(0.78, 0.90, 1.0, 0.5),
+            ));
+            root.spawn(bubble(
+                90.0,
+                130.0,
+                950.0,
+                Color::srgba(0.80, 0.96, 0.85, 0.5),
+            ));
+
+            root.spawn((
+                Text::new("Yume Vale"),
+                TextFont {
+                    font_size: FontSize::Px(80.0),
+                    ..default()
+                },
+                TextColor(TITLE),
+                TextShadow::default(),
+            ));
+            root.spawn((
+                Text::new("um vale fofo para passear com amigos"),
+                TextFont {
+                    font_size: FontSize::Px(20.0),
+                    ..default()
+                },
+                TextColor(SUBTLE),
+                Node {
+                    margin: UiRect::top(Val::Px(8.0)),
+                    ..default()
+                },
+            ));
+            root.spawn((
+                PlayButton,
+                Button,
+                Node {
+                    margin: UiRect::top(Val::Px(48.0)),
+                    padding: UiRect::axes(Val::Px(64.0), Val::Px(16.0)),
+                    border_radius: BorderRadius::all(Val::Px(999.0)),
+                    ..default()
+                },
+                BackgroundColor(BUTTON),
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    Text::new("Jogar"),
+                    TextFont {
+                        font_size: FontSize::Px(28.0),
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+            });
+            root.spawn((
+                Text::new("WASD ou setas: mover  ·  Shift: correr  ·  Q/E: girar a câmera"),
+                TextFont {
+                    font_size: FontSize::Px(14.0),
+                    ..default()
+                },
+                TextColor(SUBTLE),
+                Node {
+                    position_type: PositionType::Absolute,
+                    bottom: Val::Px(24.0),
+                    justify_self: JustifySelf::Center,
+                    ..default()
+                },
+            ));
+        });
+}
+
+pub fn play_button(
+    mut interactions: Query<&Interaction, (Changed<Interaction>, With<PlayButton>)>,
     mut commands: Commands,
-    menus: Query<Entity, With<MenuWebview>>,
+    config: Res<ClientConfig>,
+    mut flow: ResMut<AppFlow>,
+    menus: Query<Entity, With<MenuRoot>>,
 ) {
-    for entity in &menus {
-        commands.entity(entity).despawn();
+    for interaction in &mut interactions {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        *flow = AppFlow::Playing;
+        for entity in &menus {
+            commands.entity(entity).despawn();
+        }
+        start_connection(&mut commands, &config);
+    }
+}
+
+type PlayButtonHover<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static mut BackgroundColor),
+    (Changed<Interaction>, With<PlayButton>),
+>;
+
+pub fn play_button_hover(mut buttons: PlayButtonHover) {
+    for (interaction, mut color) in &mut buttons {
+        *color = match interaction {
+            Interaction::Pressed | Interaction::Hovered => BUTTON_HOVER.into(),
+            Interaction::None => BUTTON.into(),
+        };
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lightyear::prelude::Client;
+
+    use crate::config::build_client_config;
+
+    fn menu_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<AppFlow>();
+        app.insert_resource(build_client_config("127.0.0.1:5000", "player"));
+        app.add_systems(Startup, spawn_menu);
+        app.add_systems(Update, play_button);
+        app
+    }
 
     #[test]
-    fn play_game_event_despawns_menu() {
-        let mut app = App::new();
-        app.add_observer(on_play_game);
-        let menu = app.world_mut().spawn(MenuWebview).id();
+    fn menu_spawns_title_and_button() {
+        let mut app = menu_app();
+        app.update();
+        let mut texts = app.world_mut().query::<&Text>();
+        let all: Vec<String> = texts.iter(app.world()).map(|t| t.0.clone()).collect();
+        assert!(all.iter().any(|t| t == "Yume Vale"));
+        assert!(all.iter().any(|t| t == "Jogar"));
+    }
+
+    #[test]
+    fn play_starts_game_and_connection() {
+        let mut app = menu_app();
+        app.update();
+        let mut buttons = app.world_mut().query_filtered::<Entity, With<PlayButton>>();
+        let button = buttons.single(app.world()).unwrap();
         app.world_mut()
-            .commands()
-            .entity(menu)
-            .trigger(|e| Receive {
-                webview: e,
-                payload: PlayGame {},
-            });
-        app.world_mut().flush();
-        assert!(
-            app.world().get_entity(menu).is_err(),
-            "menu entity should be despawned after PlayGame"
+            .entity_mut(button)
+            .insert(Interaction::Pressed);
+        app.update();
+
+        assert_eq!(*app.world().resource::<AppFlow>(), AppFlow::Playing);
+        let mut menus = app.world_mut().query_filtered::<Entity, With<MenuRoot>>();
+        assert_eq!(menus.iter(app.world()).count(), 0, "menu should be gone");
+        let mut clients = app.world_mut().query_filtered::<Entity, With<Client>>();
+        assert_eq!(
+            clients.iter(app.world()).count(),
+            1,
+            "client entity should exist"
         );
+    }
+
+    #[test]
+    fn menu_input_gate_blocks_gather() {
+        use crate::input::{InputState, gather_input};
+
+        let mut app = App::new();
+        app.init_resource::<AppFlow>();
+        app.init_resource::<InputState>();
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<crate::camera::CameraOrbit>();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyW);
+        app.add_systems(Update, gather_input);
+        app.update();
+        assert_eq!(app.world().resource::<InputState>().tick, 0);
     }
 }
