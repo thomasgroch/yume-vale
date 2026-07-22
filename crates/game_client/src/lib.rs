@@ -2,6 +2,7 @@ pub mod camera;
 pub mod config;
 pub mod connection;
 pub mod decorations;
+pub mod hud;
 pub mod input;
 pub mod plugin;
 pub mod visuals;

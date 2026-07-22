@@ -13,6 +13,7 @@ use crate::connection::{
     LocalPlayerId, handle_welcome, retry_connect_when_disconnected, setup_client,
 };
 use crate::decorations::spawn_decorations;
+use crate::hud::{reconnect_button, spawn_hud, update_hud_status};
 use crate::input::{InputState, gather_input};
 use crate::visuals::{
     attach_player_visuals, mark_local_player_visuals, sync_position_to_transform,
@@ -36,7 +37,13 @@ impl Plugin for ClientPlugin {
 
         app.add_systems(
             Startup,
-            (spawn_camera, spawn_ground, spawn_decorations, setup_client),
+            (
+                spawn_camera,
+                spawn_ground,
+                spawn_decorations,
+                spawn_hud,
+                setup_client,
+            ),
         );
 
         app.add_systems(
@@ -48,6 +55,8 @@ impl Plugin for ClientPlugin {
                 gather_input,
                 rotate_camera_input,
                 retry_connect_when_disconnected,
+                update_hud_status,
+                reconnect_button,
             ),
         );
         app.add_systems(

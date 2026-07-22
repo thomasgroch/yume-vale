@@ -89,6 +89,28 @@ case "$CMD" in
         env PATH="$HOME/.rustup/toolchains/1.96.0-aarch64-apple-darwin/bin:$PATH" \
             trunk serve --address 127.0.0.1 --port 8080 --open
         ;;
+    map)
+        # Grasp codebase viewer: single cached index.html served locally (refetch if > 7 days old)
+        CACHE="$HOME/.cache/yume-vale/grasp"
+        PORT=8765
+        if [ ! -f "$CACHE/index.html" ] || [ "$(find "$CACHE/index.html" -mtime +7 2>/dev/null)" ]; then
+            echo "=== Downloading Grasp viewer ==="
+            mkdir -p "$CACHE"
+            curl -fsSL https://raw.githubusercontent.com/ashfordeOU/grasp/main/index.html -o "$CACHE/index.html"
+        fi
+        pkill -f "http.server $PORT" 2>/dev/null || true
+        sleep 1
+        cd "$CACHE"
+        python3 -m http.server "$PORT" >/dev/null 2>&1 &
+        SERVER_PID=$!
+        trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT INT TERM
+        sleep 1
+        open "http://localhost:$PORT/index.html"
+        echo "=== Grasp running at http://localhost:$PORT ==="
+        echo "In the browser, open folder: $ROOT"
+        echo "Press Ctrl+C to stop."
+        wait "$SERVER_PID"
+        ;;
     help|*)
         cat <<'EOF'
 Yume Vale helper script
@@ -105,6 +127,7 @@ Commands:
   tools <args>      Run the tools binary with extra args
   generate-cert     Generate WebTransport dev certificate
   web               Build server + serve wasm client via trunk (cross-play)
+  map               Open Grasp codebase map (treemap + churn heatmap) in browser
   clean-build       Delete the target/ build artifacts (frees disk space)
   help              Show this help
 EOF

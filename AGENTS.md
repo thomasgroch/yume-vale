@@ -7,6 +7,7 @@ Multiplayer 3D prototype. Bevy 0.19 + Lightyear 0.28, Rust 2024, server-authorit
 - `play` — build server+client together, run both (native)
 - `web` — dev cert + server + trunk serve at http://127.0.0.1:8080 (browser)
 - `test` / `check` — cargo test / fmt+clippy+test (clippy is `-D warnings`)
+- `map` — Grasp codebase map (treemap + churn heatmap) served at http://localhost:8765 (viewer cached in ~/.cache/yume-vale/grasp, refetched if > 7 days)
 
 Wasm builds: ONLY via `env PATH="$HOME/.rustup/toolchains/1.96.0-aarch64-apple-darwin/bin:$PATH" cargo ...` (target wasm32-unknown-unknown). Native builds use plain (Homebrew) cargo.
 

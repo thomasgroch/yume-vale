@@ -106,8 +106,12 @@ pub fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
     let client_id = derive_client_id();
     // 10s handshake window: first run after a rebuild stalls ~4s compiling
     // Metal shaders, which used to trip the 3s default and ghost the session.
+    // Token never expires: NetcodeClient::new bakes the token once at startup,
+    // so a client retrying for >30s would otherwise be rejected forever with
+    // TokenExpired (dev-only key, so the replay window is not a concern here).
     let netcode_config = NetcodeConfig {
         client_timeout_secs: 10,
+        token_expire_secs: -1,
         ..Default::default()
     };
 
