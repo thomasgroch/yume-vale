@@ -1,9 +1,7 @@
 use game_core::constants::{MAX_PLAYERS, TICK_RATE_HZ};
 
-/// Configuration for the game server.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// Host to bind to.
     pub host: String,
     /// Port for the UDP/Netcode listener.
     pub port: u16,
@@ -11,9 +9,7 @@ pub struct ServerConfig {
     pub web_transport_port: u16,
     /// Port for the WebSocket listener (browser via WS fallback).
     pub websocket_port: u16,
-    /// Maximum number of concurrent players.
     pub max_players: usize,
-    /// Simulation tick rate in Hz.
     pub tick_rate: u32,
 }
 
