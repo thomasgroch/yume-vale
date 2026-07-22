@@ -7,14 +7,13 @@ use lightyear::prelude::MessageSender;
 
 use crate::camera::CameraOrbit;
 
-/// Tracks the local input tick counter.
 #[derive(Resource, Default)]
 pub struct InputState {
     pub tick: u32,
 }
 
-/// Returns `(movement, run, action)` with movement rotated by the camera `yaw`:
-/// W = away from camera, D = screen-right. `yaw = 0` maps W to world -Z.
+/// Movement rotated by camera `yaw`: W = away from camera, D = screen-right.
+/// `yaw = 0` maps W to world -Z.
 pub fn read_keyboard_input(
     keys: &ButtonInput<KeyCode>,
     yaw: f32,
@@ -50,8 +49,6 @@ pub fn read_keyboard_input(
     (movement, run, action)
 }
 
-/// System: gathers keyboard input each frame, builds a [`ClientInput`] message,
-/// and sends it over the Lightyear [`InputChannel`].
 pub fn gather_input(
     keys: Res<ButtonInput<KeyCode>>,
     orbit: Res<CameraOrbit>,

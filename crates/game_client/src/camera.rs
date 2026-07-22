@@ -113,7 +113,7 @@ pub fn spawn_ground(
             metallic: 0.0,
             ..default()
         })),
-        Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+        Transform::IDENTITY,
     ));
 }
 

@@ -12,6 +12,16 @@ type UnmeshedInterpolatedPlayers<'w, 's> = Query<
     (With<Interpolated>, Without<Mesh3d>),
 >;
 
+fn player_material(base_color: Color) -> StandardMaterial {
+    StandardMaterial {
+        base_color,
+        metallic: 0.1,
+        perceptual_roughness: 0.8,
+        emissive: LinearRgba::from(base_color) * 0.3,
+        ..Default::default()
+    }
+}
+
 /// Attaches mesh visuals to any player entity that arrives via Lightyear
 /// replication (marked with `Interpolated`) but does not yet have a `Mesh3d`.
 /// Color comes from the server-assigned `PlayerColor` so every client renders
@@ -31,18 +41,12 @@ pub fn attach_player_visuals(
             player.id, is_local, color.0
         );
 
-        let base = palette_color(color.0);
+        let base: Color = palette_color(color.0).into();
 
         let mut entity_cmds = commands.entity(entity);
         entity_cmds.insert((
             Mesh3d(meshes.add(Capsule3d::new(0.4, 1.2))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: base.into(),
-                metallic: 0.1,
-                perceptual_roughness: 0.8,
-                emissive: LinearRgba::from(base) * 0.3,
-                ..Default::default()
-            })),
+            MeshMaterial3d(materials.add(player_material(base))),
         ));
 
         if is_local {

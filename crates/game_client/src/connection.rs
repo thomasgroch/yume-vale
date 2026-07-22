@@ -126,51 +126,42 @@ pub fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
             .map(|q| q.contains("transport=ws"))
             .unwrap_or(false);
 
+        let Some(addr) = parse_addr(
+            if use_ws {
+                &config.websocket_addr
+            } else {
+                &config.web_transport_addr
+            },
+            if use_ws {
+                "websocket_addr"
+            } else {
+                "web_transport_addr"
+            },
+        ) else {
+            return;
+        };
+        let Some(client) = build_netcode_client(addr, client_id, &netcode_config) else {
+            return;
+        };
+        let mut spawned = commands.spawn((
+            Client::default(),
+            LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+            PeerAddr(addr),
+            Link::new(None),
+            client,
+            ReplicationReceiver,
+        ));
         if use_ws {
-            let Some(ws_addr) = parse_addr(&config.websocket_addr, "websocket_addr") else {
-                return;
-            };
-            let Some(ws_client) = build_netcode_client(ws_addr, client_id, &netcode_config) else {
-                return;
-            };
-            commands
-                .spawn((
-                    Client::default(),
-                    LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
-                    PeerAddr(ws_addr),
-                    Link::new(None),
-                    ws_client,
-                    WebSocketClientIo::from_addr(
-                        #[allow(clippy::default_constructed_unit_structs)]
-                        aeronet_websocket::client::ClientConfig::default(),
-                        WebSocketScheme::Plain,
-                    ),
-                    ReplicationReceiver,
-                ))
-                .id()
+            spawned.insert(WebSocketClientIo::from_addr(
+                aeronet_websocket::client::ClientConfig,
+                WebSocketScheme::Plain,
+            ));
         } else {
-            let Some(wt_addr) = parse_addr(&config.web_transport_addr, "web_transport_addr") else {
-                return;
-            };
-            let Some(wt_client) = build_netcode_client(wt_addr, client_id, &netcode_config) else {
-                return;
-            };
-            commands
-                .spawn((
-                    Client::default(),
-                    LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
-                    PeerAddr(wt_addr),
-                    Link::new(None),
-                    wt_client,
-                    WebTransportClientIo {
-                        certificate_digest: include_str!("../../../certs/digest.txt")
-                            .trim()
-                            .to_string(),
-                    },
-                    ReplicationReceiver,
-                ))
-                .id()
+            spawned.insert(WebTransportClientIo {
+                certificate_digest: include_str!("../../../certs/digest.txt").trim().to_string(),
+            });
         }
+        spawned.id()
     };
 
     commands.entity(entity).trigger(|e| Connect { entity: e });
