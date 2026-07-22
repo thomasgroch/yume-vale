@@ -67,9 +67,9 @@ pub fn on_client_connected(
         }
     }
 
-    let player_name = format!("Player {client_id}");
     let color = PlayerColor(next_color.0);
     next_color.0 = next_color.0.wrapping_add(1);
+    let player_name = format!("Player {}", color.0 + 1);
     let player_entity = spawn_player(
         &mut commands,
         player_id,

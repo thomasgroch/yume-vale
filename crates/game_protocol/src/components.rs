@@ -1,6 +1,5 @@
 use bevy::math::curve::{Curve, Ease, FunctionCurve, Interval};
 use bevy::prelude::{Component, Srgba, Vec3};
-use game_core::id::PlayerId;
 use game_core::player_state::PlayerInput;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
@@ -35,12 +34,6 @@ impl Ease for PlayerPosition {
 
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ReplicatedPlayerInput(pub PlayerInput);
-
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ReplicatedPlayerId(pub PlayerId);
-
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ReplicatedName(pub String);
 
 /// Server-assigned player color as a `PLAYER_PALETTE` index, replicated so
 /// every client renders the same player in the same color.
@@ -82,22 +75,6 @@ mod tests {
         let curve = PlayerPosition::interpolating_curve_unbounded(start, end);
         let mid = curve.sample(0.5);
         assert!((mid.unwrap().0.x - 5.0).abs() < 1e-5);
-    }
-
-    #[test]
-    fn replicated_player_id_serde_roundtrip() {
-        let orig = ReplicatedPlayerId(PlayerId::new(42));
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: ReplicatedPlayerId = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    #[test]
-    fn replicated_name_serde_roundtrip() {
-        let orig = ReplicatedName("Yume".to_string());
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: ReplicatedName = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
     }
 
     #[test]

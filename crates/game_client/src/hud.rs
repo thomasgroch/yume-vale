@@ -53,18 +53,28 @@ type ClientConnectionState<'w, 's> =
 
 pub fn update_hud_status(
     client: ClientConnectionState,
+    names: Query<&player::PlayerName, With<player::LocalPlayer>>,
     mut texts: Query<(&mut Text, &mut TextColor), With<StatusText>>,
 ) {
     let Ok((mut text, mut color)) = texts.single_mut() else {
         return;
     };
     let (label, rgb) = match client.single() {
-        Ok((true, _, _)) => ("Conectado", (0.4, 0.9, 0.4)),
-        Ok((_, true, _)) => ("Conectando...", (0.9, 0.8, 0.3)),
-        Ok((_, _, true)) => ("Desconectado - reconectando...", (0.9, 0.4, 0.4)),
-        _ => ("Sem conexao (config invalida?)", (0.9, 0.4, 0.4)),
+        Ok((true, _, _)) => match names.single() {
+            Ok(name) => (format!("Conectado — {}", name.0), (0.4, 0.9, 0.4)),
+            Err(_) => ("Conectado".to_string(), (0.4, 0.9, 0.4)),
+        },
+        Ok((_, true, _)) => ("Conectando...".to_string(), (0.9, 0.8, 0.3)),
+        Ok((_, _, true)) => (
+            "Desconectado - reconectando...".to_string(),
+            (0.9, 0.4, 0.4),
+        ),
+        _ => (
+            "Sem conexao (config invalida?)".to_string(),
+            (0.9, 0.4, 0.4),
+        ),
     };
-    text.0 = label.into();
+    text.0 = label;
     *color = TextColor(Color::srgb(rgb.0, rgb.1, rgb.2));
 }
 
@@ -126,5 +136,18 @@ mod tests {
             .insert(Disconnected::default());
         app.update();
         assert_eq!(status_text(&mut app), "Desconectado - reconectando...");
+    }
+
+    #[test]
+    fn hud_shows_local_player_name() {
+        let mut app = hud_app();
+        app.world_mut()
+            .spawn((Client::default(), Connected, RemoteId(PeerId::Netcode(1))));
+        app.world_mut().spawn((
+            player::PlayerName("Player 1".to_string()),
+            player::LocalPlayer,
+        ));
+        app.update();
+        assert_eq!(status_text(&mut app), "Conectado — Player 1");
     }
 }

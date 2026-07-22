@@ -16,12 +16,10 @@ pub fn spawn_player(commands: &mut Commands, id: PlayerId, name: String, positio
     commands
         .spawn((
             Player { id },
-            PlayerName(name.clone()),
+            PlayerName(name),
             PlayerMovement::default(),
             Velocity(Vec3::ZERO),
             PlayerPosition(position),
-            ReplicatedPlayerId(id),
-            ReplicatedName(name),
             ReplicatedPlayerInput(game_core::player_state::PlayerInput::default()),
             Transform::from_translation(position),
         ))
@@ -66,8 +64,6 @@ mod tests {
         assert!(world.get::<PlayerMovement>(entity).is_some());
         assert!(world.get::<Velocity>(entity).is_some());
         assert!(world.get::<PlayerPosition>(entity).is_some());
-        assert!(world.get::<ReplicatedPlayerId>(entity).is_some());
-        assert!(world.get::<ReplicatedName>(entity).is_some());
         assert!(world.get::<Transform>(entity).is_some());
     }
 
