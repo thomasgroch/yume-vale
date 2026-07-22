@@ -10,9 +10,11 @@ bevy = { workspace = true, features = ["3d", "ui", "default_font"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 lightyear = { workspace = true, features = ["client", "udp", "netcode", "std", "replication", "interpolation"] }
+bevy_cef = { version = "0.12.0", features = ["debug"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lightyear = { workspace = true, features = ["client", "netcode", "replication", "interpolation", "std", "webtransport", "websocket"] }
