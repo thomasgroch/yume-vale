@@ -77,6 +77,9 @@ const MENU_HTML: &str = r#"<!DOCTYPE html>
   <button onclick="window.cef.emit('PlayGame', {})">Jogar</button>
 
   <p class="controls">WASD ou setas: mover &nbsp;·&nbsp; Shift: correr &nbsp;·&nbsp; Q/E: girar a câmera</p>
+  <script>
+    document.body.addEventListener('click', () => window.cef.emit('PlayGame', {}));
+  </script>
 </body>
 </html>"#;
 
@@ -100,5 +103,29 @@ pub fn on_play_game(
 ) {
     for entity in &menus {
         commands.entity(entity).despawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn play_game_event_despawns_menu() {
+        let mut app = App::new();
+        app.add_observer(on_play_game);
+        let menu = app.world_mut().spawn(MenuWebview).id();
+        app.world_mut()
+            .commands()
+            .entity(menu)
+            .trigger(|e| Receive {
+                webview: e,
+                payload: PlayGame {},
+            });
+        app.world_mut().flush();
+        assert!(
+            app.world().get_entity(menu).is_err(),
+            "menu entity should be despawned after PlayGame"
+        );
     }
 }
