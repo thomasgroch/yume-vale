@@ -19,8 +19,17 @@ pub struct LocalPlayerId {
 
 const RECONNECT_BACKOFF_S: f32 = 2.0;
 
-type DisconnectedClients<'w, 's> =
-    Query<'w, 's, Entity, (With<Client>, With<Disconnected>, Without<Connected>)>;
+type DisconnectedClients<'w, 's> = Query<
+    'w,
+    's,
+    Entity,
+    (
+        With<Client>,
+        With<Disconnected>,
+        Without<Connected>,
+        Without<Connecting>,
+    ),
+>;
 
 /// Unique netcode client id per instance: the server drops connection requests
 /// with an already-connected id (anti-spoofing). On native, `YUME_CLIENT_ID` env
@@ -95,7 +104,12 @@ fn build_netcode_client(
 
 pub fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
     let client_id = derive_client_id();
-    let netcode_config = NetcodeConfig::default();
+    // 10s handshake window: first run after a rebuild stalls ~4s compiling
+    // Metal shaders, which used to trip the 3s default and ghost the session.
+    let netcode_config = NetcodeConfig {
+        client_timeout_secs: 10,
+        ..Default::default()
+    };
 
     #[cfg(not(target_arch = "wasm32"))]
     let entity = {

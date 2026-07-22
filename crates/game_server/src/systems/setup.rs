@@ -44,7 +44,6 @@ pub fn setup_server(mut commands: Commands) {
         .with_key(game_protocol::PRIVATE_KEY);
 
     // UDP / Netcode listener (existing native transport)
-    tracing::info!("starting UDP server on 127.0.0.1:5000");
     let udp_entity = commands
         .spawn((
             NetcodeServer::new(config.clone()),
@@ -55,7 +54,6 @@ pub fn setup_server(mut commands: Commands) {
     commands.entity(udp_entity).trigger(|e| Start { entity: e });
 
     // WebTransport listener (browser clients)
-    tracing::info!("starting WebTransport server on 127.0.0.1:5001");
     let wt_identity = load_wt_identity("certs/server.pem", "certs/key.pem").unwrap_or_else(|| {
         tracing::warn!(
             "failed to load WT certs, generating self-signed (client hash pinning will not work)"
@@ -75,7 +73,6 @@ pub fn setup_server(mut commands: Commands) {
     commands.entity(wt_entity).trigger(|e| Start { entity: e });
 
     // WebSocket listener (browser clients, fallback)
-    tracing::info!("starting WebSocket server on 127.0.0.1:5002");
     let ws_config = aeronet_websocket::server::ServerConfig::builder()
         .with_bind_address(SocketAddr::from(([127, 0, 0, 1], 5002)))
         .with_no_encryption();
