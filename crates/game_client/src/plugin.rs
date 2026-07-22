@@ -69,7 +69,10 @@ impl Plugin for ClientPlugin {
             use crate::menu::{PlayGame, on_play_game, spawn_menu};
             use bevy_cef::prelude::{CefPlugin, JsEmitEventPlugin};
 
-            app.add_plugins((CefPlugin::default(), JsEmitEventPlugin::<PlayGame>::default()));
+            app.add_plugins((
+                CefPlugin::default(),
+                JsEmitEventPlugin::<PlayGame>::default(),
+            ));
             app.add_systems(Startup, spawn_menu);
             app.add_observer(on_play_game);
         }
