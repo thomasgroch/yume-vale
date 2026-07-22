@@ -49,11 +49,6 @@ case "$CMD" in
         cd "$ROOT"
         cargo run -p tools -- generate-cert
         ;;
-    world)
-        cd "$ROOT"
-        mkdir -p assets
-        cargo run -p tools -- generate-world --output assets/world.ron
-        ;;
     clean-build)
         TARGET="$ROOT/target"
         if [ -d "$TARGET" ]; then
@@ -109,7 +104,6 @@ Commands:
   play              Build both, then run server (background) + client (foreground) in one window
   tools <args>      Run the tools binary with extra args
   generate-cert     Generate WebTransport dev certificate
-  world             Generate assets/world.ron
   web               Build server + serve wasm client via trunk (cross-play)
   clean-build       Delete the target/ build artifacts (frees disk space)
   help              Show this help

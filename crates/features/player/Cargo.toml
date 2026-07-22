@@ -13,4 +13,4 @@ game_core = { workspace = true }
 game_protocol = { workspace = true }
 
 [dev-dependencies]
-serde_json = "1"
+serde_json.workspace = true

@@ -105,24 +105,48 @@ fn random_client_id() -> u64 {
     u64::from_le_bytes(buf).max(1)
 }
 
+fn parse_addr(addr: &str, field: &str) -> Option<SocketAddr> {
+    match addr.parse() {
+        Ok(addr) => Some(addr),
+        Err(e) => {
+            error!("invalid {field} in ClientConfig ({addr:?}): {e}");
+            None
+        }
+    }
+}
+
+fn build_netcode_client(
+    addr: SocketAddr,
+    client_id: u64,
+    config: &NetcodeConfig,
+) -> Option<NetcodeClient> {
+    let auth = Authentication::Manual {
+        server_addr: addr,
+        client_id,
+        private_key: PRIVATE_KEY,
+        protocol_id: PROTOCOL_ID,
+    };
+    match NetcodeClient::new(auth, config.clone()) {
+        Ok(client) => Some(client),
+        Err(e) => {
+            error!("failed to create NetcodeClient: {e}");
+            None
+        }
+    }
+}
+
 fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
     let client_id = derive_client_id();
     let netcode_config = NetcodeConfig::default();
 
     #[cfg(not(target_arch = "wasm32"))]
     let entity = {
-        let addr: SocketAddr = config
-            .server_addr
-            .parse()
-            .expect("invalid server address in ClientConfig");
-        let auth = Authentication::Manual {
-            server_addr: addr,
-            client_id,
-            private_key: PRIVATE_KEY,
-            protocol_id: PROTOCOL_ID,
+        let Some(addr) = parse_addr(&config.server_addr, "server_addr") else {
+            return;
         };
-        let client = NetcodeClient::new(auth, netcode_config.clone())
-            .expect("failed to create NetcodeClient");
+        let Some(client) = build_netcode_client(addr, client_id, &netcode_config) else {
+            return;
+        };
         commands
             .spawn((
                 Client::default(),
@@ -145,18 +169,12 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
             .unwrap_or(false);
 
         if use_ws {
-            let ws_addr: SocketAddr = config
-                .websocket_addr
-                .parse()
-                .expect("invalid websocket_addr in ClientConfig");
-            let ws_auth = Authentication::Manual {
-                server_addr: ws_addr,
-                client_id,
-                private_key: PRIVATE_KEY,
-                protocol_id: PROTOCOL_ID,
+            let Some(ws_addr) = parse_addr(&config.websocket_addr, "websocket_addr") else {
+                return;
             };
-            let ws_client = NetcodeClient::new(ws_auth, netcode_config)
-                .expect("failed to create NetcodeClient");
+            let Some(ws_client) = build_netcode_client(ws_addr, client_id, &netcode_config) else {
+                return;
+            };
             commands
                 .spawn((
                     Client::default(),
@@ -173,18 +191,12 @@ fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
                 ))
                 .id()
         } else {
-            let wt_addr: SocketAddr = config
-                .web_transport_addr
-                .parse()
-                .expect("invalid web_transport_addr in ClientConfig");
-            let wt_auth = Authentication::Manual {
-                server_addr: wt_addr,
-                client_id,
-                private_key: PRIVATE_KEY,
-                protocol_id: PROTOCOL_ID,
+            let Some(wt_addr) = parse_addr(&config.web_transport_addr, "web_transport_addr") else {
+                return;
             };
-            let wt_client = NetcodeClient::new(wt_auth, netcode_config)
-                .expect("failed to create NetcodeClient");
+            let Some(wt_client) = build_netcode_client(wt_addr, client_id, &netcode_config) else {
+                return;
+            };
             commands
                 .spawn((
                     Client::default(),

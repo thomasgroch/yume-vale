@@ -11,4 +11,4 @@ thiserror = { workspace = true }
 glam = { workspace = true }
 
 [dev-dependencies]
-serde_json = "1"
+serde_json.workspace = true

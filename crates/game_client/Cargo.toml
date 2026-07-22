@@ -18,7 +18,7 @@ lightyear = { workspace = true, features = ["client", "udp", "netcode", "std", "
 lightyear = { workspace = true, features = ["client", "netcode", "replication", "interpolation", "std", "webtransport", "websocket"] }
 web-sys = { version = "0.3", features = ["Window", "Location"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
-aeronet_websocket = "0.21.0"
+aeronet_websocket.workspace = true
 
 [dev-dependencies]
-serde_json = "1"
+serde_json.workspace = true
