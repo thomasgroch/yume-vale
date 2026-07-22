@@ -1,6 +1,5 @@
 use bevy::prelude::Resource;
 
-/// Configuration for the Yume Vale game client.
 #[derive(Debug, Clone, Resource)]
 pub struct ClientConfig {
     /// Native server address in `host:port` format (UDP, default `127.0.0.1:5000`).
@@ -24,7 +23,6 @@ impl Default for ClientConfig {
     }
 }
 
-/// Build a client config for the given server address and player name.
 pub fn build_client_config(server_addr: &str, player_name: &str) -> ClientConfig {
     ClientConfig {
         server_addr: server_addr.to_string(),

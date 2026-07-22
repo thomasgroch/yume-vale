@@ -56,7 +56,6 @@ pub fn spawn_decorations(
 
         match (next() * 10.0) as u32 {
             0..=4 => {
-                // Tree: trunk + canopy.
                 commands.spawn((
                     Mesh3d(trunk_mesh.clone()),
                     MeshMaterial3d(trunk_mat.clone()),
@@ -71,7 +70,6 @@ pub fn spawn_decorations(
                 ));
             }
             5..=7 => {
-                // Rock.
                 let s = 0.6 + next() * 0.8;
                 commands.spawn((
                     Mesh3d(rock_mesh.clone()),
@@ -82,7 +80,6 @@ pub fn spawn_decorations(
                 ));
             }
             _ => {
-                // Flower.
                 commands.spawn((
                     Mesh3d(flower_mesh.clone()),
                     MeshMaterial3d(flower_mat.clone()),
