@@ -1,0 +1,285 @@
+use bevy::prelude::*;
+use core::net::SocketAddr;
+use game_protocol::{PRIVATE_KEY, PROTOCOL_ID, Welcome};
+use lightyear::connection::client::Connect;
+use lightyear::netcode::{auth::Authentication, client_plugin::NetcodeConfig};
+use lightyear::prelude::client::NetcodeClient;
+use lightyear::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+use lightyear::prelude::client::{WebSocketClientIo, WebSocketScheme, WebTransportClientIo};
+
+use crate::config::ClientConfig;
+
+/// Tracks the local player's assigned ID (set on receiving Welcome).
+#[derive(Resource, Default)]
+pub struct LocalPlayerId {
+    pub id: Option<game_core::id::PlayerId>,
+}
+
+const RECONNECT_BACKOFF_S: f32 = 2.0;
+
+type DisconnectedClients<'w, 's> =
+    Query<'w, 's, Entity, (With<Client>, With<Disconnected>, Without<Connected>)>;
+
+/// Unique netcode client id per instance: the server drops connection requests
+/// with an already-connected id (anti-spoofing). On native, `YUME_CLIENT_ID` env
+/// overrides for tests. On wasm, a random id is generated via getrandom.
+fn derive_client_id() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        client_id_from_env(std::env::var("YUME_CLIENT_ID").ok().as_deref())
+            .unwrap_or_else(time_based_client_id)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        random_client_id()
+    }
+}
+
+/// Parses `YUME_CLIENT_ID` env override. Returns `None` if absent or invalid.
+/// Only used on native (env vars unavailable on wasm).
+#[cfg(not(target_arch = "wasm32"))]
+fn client_id_from_env(raw: Option<&str>) -> Option<u64> {
+    raw.and_then(|s| s.parse::<u64>().ok()).map(|id| id.max(1))
+}
+
+/// Native: time + process-id based client id (not entropy-safe, but unique per
+/// local process instance — good enough for dev).
+#[cfg(not(target_arch = "wasm32"))]
+fn time_based_client_id() -> u64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x59c3_7a6e);
+    (nanos ^ ((std::process::id() as u64) << 32)).max(1)
+}
+
+/// Wasm: random client id via getrandom (SystemTime and process::id unavailable).
+#[cfg(target_arch = "wasm32")]
+fn random_client_id() -> u64 {
+    let mut buf = [0u8; 8];
+    getrandom::fill(&mut buf).expect("getrandom failed to generate client id");
+    u64::from_le_bytes(buf).max(1)
+}
+
+fn parse_addr(addr: &str, field: &str) -> Option<SocketAddr> {
+    match addr.parse() {
+        Ok(addr) => Some(addr),
+        Err(e) => {
+            error!("invalid {field} in ClientConfig ({addr:?}): {e}");
+            None
+        }
+    }
+}
+
+fn build_netcode_client(
+    addr: SocketAddr,
+    client_id: u64,
+    config: &NetcodeConfig,
+) -> Option<NetcodeClient> {
+    let auth = Authentication::Manual {
+        server_addr: addr,
+        client_id,
+        private_key: PRIVATE_KEY,
+        protocol_id: PROTOCOL_ID,
+    };
+    match NetcodeClient::new(auth, config.clone()) {
+        Ok(client) => Some(client),
+        Err(e) => {
+            error!("failed to create NetcodeClient: {e}");
+            None
+        }
+    }
+}
+
+pub fn setup_client(mut commands: Commands, config: Res<ClientConfig>) {
+    let client_id = derive_client_id();
+    let netcode_config = NetcodeConfig::default();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let entity = {
+        let Some(addr) = parse_addr(&config.server_addr, "server_addr") else {
+            return;
+        };
+        let Some(client) = build_netcode_client(addr, client_id, &netcode_config) else {
+            return;
+        };
+        commands
+            .spawn((
+                Client::default(),
+                LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                PeerAddr(addr),
+                Link::new(None),
+                client,
+                UdpIo::default(),
+                ReplicationReceiver,
+            ))
+            .id()
+    };
+
+    // Wasm: use WebTransport by default (127.0.0.1:5001); ?transport=ws -> WebSocket (127.0.0.1:5002)
+    #[cfg(target_arch = "wasm32")]
+    let entity = {
+        let use_ws = web_sys::window()
+            .and_then(|w| w.location().search().ok())
+            .map(|q| q.contains("transport=ws"))
+            .unwrap_or(false);
+
+        if use_ws {
+            let Some(ws_addr) = parse_addr(&config.websocket_addr, "websocket_addr") else {
+                return;
+            };
+            let Some(ws_client) = build_netcode_client(ws_addr, client_id, &netcode_config) else {
+                return;
+            };
+            commands
+                .spawn((
+                    Client::default(),
+                    LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                    PeerAddr(ws_addr),
+                    Link::new(None),
+                    ws_client,
+                    WebSocketClientIo::from_addr(
+                        #[allow(clippy::default_constructed_unit_structs)]
+                        aeronet_websocket::client::ClientConfig::default(),
+                        WebSocketScheme::Plain,
+                    ),
+                    ReplicationReceiver,
+                ))
+                .id()
+        } else {
+            let Some(wt_addr) = parse_addr(&config.web_transport_addr, "web_transport_addr") else {
+                return;
+            };
+            let Some(wt_client) = build_netcode_client(wt_addr, client_id, &netcode_config) else {
+                return;
+            };
+            commands
+                .spawn((
+                    Client::default(),
+                    LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                    PeerAddr(wt_addr),
+                    Link::new(None),
+                    wt_client,
+                    WebTransportClientIo {
+                        certificate_digest: include_str!("../../../certs/digest.txt")
+                            .trim()
+                            .to_string(),
+                    },
+                    ReplicationReceiver,
+                ))
+                .id()
+        }
+    };
+
+    commands.entity(entity).trigger(|e| Connect { entity: e });
+}
+
+/// Re-triggers `Connect` (with backoff) on client entities that lost their
+/// connection. The netcode server silently absorbs a quick reconnect while the
+/// old session is still alive, so a single failed attempt must not be final.
+pub fn retry_connect_when_disconnected(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut timer: Local<Option<Timer>>,
+    clients: DisconnectedClients,
+) {
+    let timer =
+        timer.get_or_insert_with(|| Timer::from_seconds(RECONNECT_BACKOFF_S, TimerMode::Repeating));
+    timer.tick(time.delta());
+    if !timer.just_finished() {
+        return;
+    }
+    for entity in clients.iter() {
+        info!("retrying connection for disconnected client {entity:?}");
+        commands.entity(entity).trigger(|e| Connect { entity: e });
+    }
+}
+
+pub fn handle_welcome(
+    mut receivers: Query<&mut MessageReceiver<Welcome>>,
+    mut local_id: ResMut<LocalPlayerId>,
+) {
+    for mut receiver in receivers.iter_mut() {
+        for welcome in receiver.receive() {
+            local_id.id = Some(welcome.player_id);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::time::Duration;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn client_id_from_env_parses_valid_id() {
+        assert_eq!(client_id_from_env(Some("42")), Some(42));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn client_id_from_env_rejects_zero() {
+        assert_eq!(client_id_from_env(Some("0")), Some(1));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn client_id_from_env_ignores_garbage() {
+        assert_eq!(client_id_from_env(Some("not-a-number")), None);
+        assert_eq!(client_id_from_env(None), None);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn time_based_client_id_is_nonzero_and_unique() {
+        let a = time_based_client_id();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let b = time_based_client_id();
+        assert_ne!(a, 0);
+        assert_ne!(b, 0);
+        assert_ne!(a, b, "two client instances must not share a netcode id");
+    }
+
+    #[test]
+    fn retry_connect_retriggers_after_backoff() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_systems(Update, retry_connect_when_disconnected);
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+        app.add_observer(move |_: On<Connect>| {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        app.world_mut()
+            .spawn((Client::default(), Disconnected::default()));
+
+        app.update();
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            0,
+            "no retry before the backoff elapses"
+        );
+
+        // Virtual time clamps delta to max_delta (250ms default); raise it so a
+        // single ManualDuration can exceed the 2s backoff.
+        app.world_mut()
+            .resource_mut::<Time<Virtual>>()
+            .set_max_delta(Duration::from_secs(10));
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            Duration::from_secs(3),
+        ));
+        app.update();
+        assert!(
+            counter.load(Ordering::SeqCst) >= 1,
+            "Connect should be re-triggered after the backoff"
+        );
+    }
+}
