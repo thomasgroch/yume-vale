@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 bevy = { workspace = true, features = ["3d", "bevy_state"] }
-lightyear = { workspace = true, features = ["server", "udp", "netcode", "crossbeam", "replication", "interpolation", "webtransport", "webtransport_self_signed", "websocket"] }
+lightyear = { workspace = true, features = ["server", "client", "udp", "netcode", "crossbeam", "raw_connection", "replication", "interpolation", "webtransport", "webtransport_self_signed", "websocket"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }

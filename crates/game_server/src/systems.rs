@@ -56,7 +56,8 @@ pub fn on_client_connected(
     };
     let client_id = match remote_id.0 {
         PeerId::Netcode(id) => id,
-        _ => return,
+        // Non-netcode transports (raw, steam, local) identify via their PeerId bits
+        _ => remote_id.0.to_bits(),
     };
     let player_id = PlayerId::new(client_id);
 
