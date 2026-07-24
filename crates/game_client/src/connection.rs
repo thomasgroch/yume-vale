@@ -144,13 +144,39 @@ pub fn start_connection(commands: &mut Commands, config: &ClientConfig) {
             .id()
     };
 
-    // Wasm: YUME_SERVER_WS_URL (compile-time, deploys como Dokploy) -> from_url
-    // direto (wss/DNS; o endereço do token netcode é nominal — o servidor não
-    // valida a whitelist). Localhost -> WebTransport (cert dev); outro host ->
-    // WebSocket plain no host da página. ?transport=ws força WS em localhost.
+    // Wasm: página HTTPS -> wss://{host}/ws (Traefik faz strip para o servidor);
+    // HTTP fora de localhost -> ws://{host}:5002; localhost -> WebTransport (cert
+    // dev); ?transport=ws força WS em localhost. YUME_SERVER_WS_URL (compile-time)
+    // sobrepõe tudo. Endereço no token netcode é nominal — servidor não valida.
     #[cfg(target_arch = "wasm32")]
     let entity = {
-        if let Some(url) = option_env!("YUME_SERVER_WS_URL").filter(|u| !u.is_empty()) {
+        let (query, page_host, page_https) = web_sys::window()
+            .map(|w| {
+                (
+                    w.location().search().ok().unwrap_or_default(),
+                    w.location().hostname().ok(),
+                    w.location()
+                        .protocol()
+                        .map(|p| p == "https:")
+                        .unwrap_or(false),
+                )
+            })
+            .unwrap_or_default();
+        let is_local = page_host
+            .as_deref()
+            .map(|h| h == "localhost" || h == "127.0.0.1" || h == "[::1]")
+            .unwrap_or(true);
+
+        let explicit_url = option_env!("YUME_SERVER_WS_URL")
+            .filter(|u| !u.is_empty())
+            .map(str::to_string);
+        let derived_wss = if !is_local && page_https {
+            page_host.as_deref().map(|h| format!("wss://{h}/ws"))
+        } else {
+            None
+        };
+
+        if let Some(url) = explicit_url.or(derived_wss) {
             let Some(token_addr) = parse_addr(&config.websocket_addr, "websocket_addr") else {
                 return;
             };
@@ -173,18 +199,6 @@ pub fn start_connection(commands: &mut Commands, config: &ClientConfig) {
             return;
         }
 
-        let (query, page_host) = web_sys::window()
-            .map(|w| {
-                (
-                    w.location().search().ok().unwrap_or_default(),
-                    w.location().hostname().ok(),
-                )
-            })
-            .unwrap_or_default();
-        let is_local = page_host
-            .as_deref()
-            .map(|h| h == "localhost" || h == "127.0.0.1" || h == "[::1]")
-            .unwrap_or(true);
         let use_ws = query.contains("transport=ws") || !is_local;
 
         let template = if use_ws {
