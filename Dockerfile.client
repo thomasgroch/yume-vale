@@ -1,12 +1,17 @@
-FROM rust:1-bookworm AS build
+FROM rust:1.96-bookworm AS build
 RUN rustup target add wasm32-unknown-unknown \
- && curl -fsSL https://github.com/trunk-rs/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz \
+ && curl -fsSL "https://github.com/trunk-rs/trunk/releases/latest/download/trunk-$(uname -m)-unknown-linux-gnu.tar.gz" \
     | tar -xz -C /usr/local/bin
 WORKDIR /app
 COPY . .
+# certs/ is gitignored (dev-only); the WT digest include_str! needs a file to
+# compile, but the deploy connects via YUME_SERVER_WS_URL and never uses WT.
+RUN mkdir -p certs && echo 00 > certs/digest.txt
 # Baked into the wasm at compile time (option_env!); empty = derive from page host.
 ARG YUME_SERVER_WS_URL=""
 ENV YUME_SERVER_WS_URL=$YUME_SERVER_WS_URL
+# trunk 0.21 pins wasm-opt v123, which rejects rustc 1.96's wasm output.
+ENV TRUNK_TOOLS_WASM_OPT=version_131
 WORKDIR /app/apps/client
 RUN trunk build --release
 

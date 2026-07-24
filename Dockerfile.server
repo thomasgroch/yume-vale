@@ -1,6 +1,6 @@
 # Dev profile on purpose: workspace dev sets deps opt-level=3, so the server
 # runs fast enough while building in a fraction of the time/RAM of release.
-FROM rust:1-bookworm AS build
+FROM rust:1.96-bookworm AS build
 # wayland-sys/libudev-sys (via bevy_winit←avian3d) need these even though the
 # server runs headless; dlopen-based x11/xkb crates need nothing at build time.
 RUN apt-get update \
