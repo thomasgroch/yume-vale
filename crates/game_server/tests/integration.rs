@@ -25,6 +25,7 @@ fn server_app() -> App {
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.init_resource::<NextPlayerColor>();
+    app.init_resource::<game_server::systems::WalkConfig>();
     app.add_observer(handle_new_client_link);
     app.add_observer(on_client_connected);
     app.add_systems(FixedUpdate, apply_client_input.in_set(ServerSystems));
@@ -94,6 +95,25 @@ where
         step(server, client, 1);
     }
     cond(server, client)
+}
+
+#[test]
+fn replicated_player_has_interpolated_marker() {
+    let mut server = server_app();
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 20004);
+
+    let ok = wait_until(&mut server, &mut client, |_s, c| {
+        c.world_mut()
+            .query_filtered::<Entity, (With<Player>, With<Interpolated>)>()
+            .iter(c.world())
+            .count()
+            >= 1
+    });
+    assert!(
+        ok,
+        "client player entity should have the Interpolated marker"
+    );
 }
 
 #[test]

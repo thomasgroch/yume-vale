@@ -53,6 +53,14 @@ fn client_id_from_env(raw: Option<&str>) -> Option<u64> {
     raw.and_then(|s| s.parse::<u64>().ok()).map(|id| id.max(1))
 }
 
+/// `YUME_SERVER_ADDR` env override (`host:port`) for the native server address,
+/// so friends can point the binary at a remote host. Native only (wasm resolves
+/// the address from the page URL).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn server_addr_from_env(raw: Option<String>) -> Option<String> {
+    raw.filter(|s| !s.is_empty())
+}
+
 /// Native: time + process-id based client id (not entropy-safe, but unique per
 /// local process instance — good enough for dev).
 #[cfg(not(target_arch = "wasm32"))]
@@ -136,26 +144,44 @@ pub fn start_connection(commands: &mut Commands, config: &ClientConfig) {
             .id()
     };
 
-    // Wasm: use WebTransport by default (127.0.0.1:5001); ?transport=ws -> WebSocket (127.0.0.1:5002)
+    // Wasm: localhost -> WebTransport (cert dev autoassinado, 127.0.0.1:5001);
+    // qualquer outro host (ex.: tailnet) -> WebSocket plain conectando de volta
+    // no host que serviu a página (porta do config, default 5002).
+    // ?transport=ws força WebSocket mesmo em localhost.
     #[cfg(target_arch = "wasm32")]
     let entity = {
-        let use_ws = web_sys::window()
-            .and_then(|w| w.location().search().ok())
-            .map(|q| q.contains("transport=ws"))
-            .unwrap_or(false);
+        let (query, page_host) = web_sys::window()
+            .map(|w| {
+                (
+                    w.location().search().ok().unwrap_or_default(),
+                    w.location().hostname().ok(),
+                )
+            })
+            .unwrap_or_default();
+        let is_local = page_host
+            .as_deref()
+            .map(|h| h == "localhost" || h == "127.0.0.1" || h == "[::1]")
+            .unwrap_or(true);
+        let use_ws = query.contains("transport=ws") || !is_local;
 
-        let Some(addr) = parse_addr(
-            if use_ws {
-                &config.websocket_addr
-            } else {
-                &config.web_transport_addr
-            },
-            if use_ws {
-                "websocket_addr"
-            } else {
-                "web_transport_addr"
-            },
-        ) else {
+        let template = if use_ws {
+            &config.websocket_addr
+        } else {
+            &config.web_transport_addr
+        };
+        let field = if use_ws {
+            "websocket_addr"
+        } else {
+            "web_transport_addr"
+        };
+        let addr_string = match (is_local, page_host) {
+            (false, Some(host)) => {
+                let port = template.rsplit(':').next().unwrap_or("5002");
+                format!("{host}:{port}")
+            }
+            _ => template.clone(),
+        };
+        let Some(addr) = parse_addr(&addr_string, field) else {
             return;
         };
         let Some(client) = build_netcode_client(addr, client_id, &netcode_config) else {
@@ -239,6 +265,22 @@ mod tests {
     fn client_id_from_env_ignores_garbage() {
         assert_eq!(client_id_from_env(Some("not-a-number")), None);
         assert_eq!(client_id_from_env(None), None);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn server_addr_from_env_accepts_host_port() {
+        assert_eq!(
+            server_addr_from_env(Some("100.64.0.1:5000".to_string())),
+            Some("100.64.0.1:5000".to_string())
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn server_addr_from_env_rejects_empty_or_missing() {
+        assert_eq!(server_addr_from_env(Some(String::new())), None);
+        assert_eq!(server_addr_from_env(None), None);
     }
 
     #[cfg(not(target_arch = "wasm32"))]

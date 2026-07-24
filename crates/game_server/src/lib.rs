@@ -25,6 +25,7 @@ pub fn build_test_app() -> bevy::prelude::App {
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.init_resource::<systems::NextPlayerColor>();
+    app.init_resource::<systems::WalkConfig>();
     app.add_systems(
         FixedUpdate,
         systems::apply_client_input.in_set(systems::ServerSystems),

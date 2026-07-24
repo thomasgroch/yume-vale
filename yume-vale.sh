@@ -69,23 +69,39 @@ case "$CMD" in
         ;;
     web)
         cd "$ROOT"
+        # Kill stale processes from previous runs (avoids "address already in use")
+        pkill -f "target/debug/server" 2>/dev/null || true
+        pkill -f "trunk serve --address 127.0.0.1 --port 8080" 2>/dev/null || true
+        sleep 1
+        # Placeholder on :8080 so the URL responds immediately during the (long) builds;
+        # the page auto-refreshes until trunk takes over.
+        PLACEHOLDER_DIR="$(mktemp -d)"
+        cat > "$PLACEHOLDER_DIR/index.html" <<'HTML'
+<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="3">
+<title>Yume Vale — compilando…</title>
+<body style="font-family:monospace;background:#ffdbe9;color:#7a3b4f;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center"><h1>Yume Vale</h1><p>Compilando… esta página recarrega sozinha quando o jogo estiver pronto.</p></div>
+HTML
+        python3 -m http.server 8080 --bind 127.0.0.1 --directory "$PLACEHOLDER_DIR" >/dev/null 2>&1 &
+        PLACEHOLDER_PID=$!
+        trap 'kill "$PLACEHOLDER_PID" 2>/dev/null; kill "$SERVER_PID" 2>/dev/null; pkill -f "trunk serve --address 127.0.0.1 --port 8080" 2>/dev/null || true' EXIT INT TERM
         # Regenerate cert if missing or older than 7 days
         if [ ! -f certs/server.pem ] || [ "$(find certs/server.pem -mtime +7 2>/dev/null)" ]; then
-            echo "=== Generating WebTransport dev certificate ==="
+            echo "=== [1/4] Generating WebTransport dev certificate ==="
             cargo run -p tools -- generate-cert
         fi
-        # Build server with Homebrew cargo
+        echo "=== [2/4] Building server (native) ==="
         cargo build -p server
-        # Start server in background
-        pkill -f "target/debug/server" 2>/dev/null || true
-        sleep 1
         ./target/debug/server &
         SERVER_PID=$!
-        trap 'kill "$SERVER_PID" 2>/dev/null; kill %1 2>/dev/null; pkill -f "trunk" 2>/dev/null || true' EXIT INT TERM
         sleep 2
-        # Serve wasm client with rustup toolchain (trunk must run from the crate dir)
-        echo "=== Starting trunk dev server ==="
+        echo "=== [3/4] Building wasm client (trunk) — primeira vez demora ==="
         cd "$ROOT/apps/client"
+        env PATH="$HOME/.rustup/toolchains/1.96.0-aarch64-apple-darwin/bin:$PATH" \
+            trunk build
+        # Build done: swap placeholder for trunk (binds in ~1s) and open the browser
+        kill "$PLACEHOLDER_PID" 2>/dev/null || true
+        echo "=== [4/4] Serving at http://127.0.0.1:8080 — a aba abre sozinha ==="
         env PATH="$HOME/.rustup/toolchains/1.96.0-aarch64-apple-darwin/bin:$PATH" \
             trunk serve --address 127.0.0.1 --port 8080 --open
         ;;

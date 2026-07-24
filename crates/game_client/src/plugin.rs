@@ -5,8 +5,10 @@ use game_protocol::ProtocolPlugin;
 use lightyear::prelude::client::ClientPlugins;
 use player::PlayerPlugin;
 
+use crate::arena::{load_arena_assets, spawn_arena};
 use crate::camera::{
     CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera, spawn_ground,
+    zoom_camera_input,
 };
 use crate::config::ClientConfig;
 use crate::connection::{LocalPlayerId, handle_welcome, retry_connect_when_disconnected};
@@ -15,7 +17,8 @@ use crate::hud::{reconnect_button, spawn_hud, update_hud_status};
 use crate::input::{InputState, gather_input};
 use crate::menu::{AppFlow, play_button, play_button_hover, spawn_menu};
 use crate::visuals::{
-    attach_player_visuals, mark_local_player_visuals, sync_position_to_transform,
+    animate_foxes, attach_player_visuals, load_fox_assets, mark_local_player_visuals,
+    setup_fox_animators, sync_position_to_transform,
 };
 
 #[derive(Default)]
@@ -43,7 +46,11 @@ impl Plugin for ClientPlugin {
                 spawn_decorations,
                 spawn_hud,
                 spawn_menu,
-            ),
+                load_fox_assets,
+                load_arena_assets,
+                spawn_arena,
+            )
+                .chain(),
         );
 
         app.add_systems(
@@ -51,9 +58,16 @@ impl Plugin for ClientPlugin {
             (
                 handle_welcome,
                 attach_player_visuals,
+                setup_fox_animators,
                 mark_local_player_visuals,
                 gather_input,
                 rotate_camera_input,
+                zoom_camera_input,
+            ),
+        );
+        app.add_systems(
+            Update,
+            (
                 retry_connect_when_disconnected,
                 update_hud_status,
                 reconnect_button,
@@ -63,7 +77,12 @@ impl Plugin for ClientPlugin {
         );
         app.add_systems(
             PostUpdate,
-            (sync_position_to_transform, follow_local_player).chain(),
+            (
+                sync_position_to_transform,
+                animate_foxes,
+                follow_local_player,
+            )
+                .chain(),
         );
     }
 }

@@ -1,7 +1,10 @@
+use avian3d::prelude::*;
 use bevy::prelude::*;
+use bevy_tnua::prelude::*;
+use bevy_tnua_avian3d::prelude::*;
 use core::time::Duration;
 use game_protocol::ProtocolPlugin;
-use player::PlayerPlugin;
+use player::{PlayerPlugin, YumeScheme};
 
 use crate::config::ServerConfig;
 use crate::systems::*;
@@ -17,10 +20,17 @@ impl Plugin for ServerPlugin {
 
         app.add_plugins(lightyear::prelude::server::ServerPlugins { tick_duration });
 
+        app.add_plugins((
+            PhysicsPlugins::default(),
+            TnuaControllerPlugin::<YumeScheme>::new(FixedUpdate),
+            TnuaAvian3dPlugin::new(FixedUpdate),
+        ));
+
         app.add_plugins((ProtocolPlugin, PlayerPlugin));
 
         app.insert_resource(ServerConfigResource(self.config.clone()));
         app.init_resource::<NextPlayerColor>();
+        app.init_resource::<WalkConfig>();
 
         app.add_observer(handle_new_client_link);
         app.add_observer(on_client_connected);
@@ -31,10 +41,10 @@ impl Plugin for ServerPlugin {
 
         app.add_systems(
             FixedUpdate,
-            sync_transform_to_position.after(player::integrate_velocity),
+            sync_transform_to_position.after(PhysicsSystems::Writeback),
         );
 
-        app.add_systems(PostStartup, setup_server);
+        app.add_systems(PostStartup, (setup_server, setup_world));
     }
 }
 
@@ -52,7 +62,7 @@ mod tests {
             config: cfg.clone(),
         };
         assert_eq!(plugin.config.tick_rate, 10);
-        assert_eq!(plugin.config.host, "127.0.0.1");
+        assert_eq!(plugin.config.host, "0.0.0.0");
         assert_eq!(plugin.config.port, 5000);
 
         let resource = ServerConfigResource(cfg);

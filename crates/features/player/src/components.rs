@@ -18,6 +18,7 @@ pub struct LocalPlayer;
 pub struct PlayerMovement {
     pub direction: Direction,
     pub running: bool,
+    pub jump: bool,
 }
 
 impl Default for PlayerMovement {
@@ -25,9 +26,7 @@ impl Default for PlayerMovement {
         Self {
             direction: Direction::zero(),
             running: false,
+            jump: false,
         }
     }
 }
-
-#[derive(Component, Debug, Clone, Default, PartialEq)]
-pub struct Velocity(pub bevy::prelude::Vec3);

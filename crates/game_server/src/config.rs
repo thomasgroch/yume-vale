@@ -2,6 +2,8 @@ use game_core::constants::{MAX_PLAYERS, TICK_RATE_HZ};
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
+    /// Bind address for all listeners (default `0.0.0.0` = all interfaces,
+    /// so friends over LAN/Tailscale/tunnel can connect).
     pub host: String,
     /// Port for the UDP/Netcode listener.
     pub port: u16,
@@ -16,7 +18,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: "127.0.0.1".to_string(),
+            host: "0.0.0.0".to_string(),
             port: 5000,
             web_transport_port: 5001,
             websocket_port: 5002,
@@ -45,7 +47,7 @@ mod tests {
         let cfg = ServerConfig::default();
         assert_eq!(cfg.max_players, MAX_PLAYERS);
         assert_eq!(cfg.tick_rate, TICK_RATE_HZ);
-        assert_eq!(cfg.host, "127.0.0.1");
+        assert_eq!(cfg.host, "0.0.0.0");
         assert_eq!(cfg.port, 5000);
         assert_eq!(cfg.web_transport_port, 5001);
         assert_eq!(cfg.websocket_port, 5002);

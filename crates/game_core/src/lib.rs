@@ -1,5 +1,7 @@
 pub mod actions;
+pub mod arena;
 pub mod constants;
+pub mod decorations;
 pub mod id;
 pub mod inventory;
 pub mod math;

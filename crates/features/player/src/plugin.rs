@@ -1,5 +1,6 @@
 use bevy::app::{App, FixedUpdate, Plugin};
 use bevy::ecs::schedule::{IntoScheduleConfigs, SystemSet};
+use bevy_tnua::TnuaUserControlsSystems;
 use lightyear::prelude::*;
 
 use crate::components::*;
@@ -16,13 +17,14 @@ impl Plugin for PlayerPlugin {
         app.component::<Player>().replicate();
         app.component::<PlayerName>().replicate();
 
-        app.add_systems(FixedUpdate, apply_movement_input.in_set(PlayerMovementSet))
-            .add_systems(
-                FixedUpdate,
-                (integrate_velocity
-                    .after(apply_movement_input)
-                    .in_set(PlayerMovementSet),),
-            )
-            .add_systems(FixedUpdate, process_actions);
+        app.add_systems(
+            FixedUpdate,
+            (
+                feed_walk_basis
+                    .in_set(TnuaUserControlsSystems)
+                    .in_set(PlayerMovementSet),
+                process_actions,
+            ),
+        );
     }
 }

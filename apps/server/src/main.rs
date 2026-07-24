@@ -15,6 +15,7 @@ fn main() {
             )),
         )
         .add_plugins(bevy::state::app::StatesPlugin)
+        .add_plugins(bevy::asset::AssetPlugin::default())
         .add_plugins(bevy::transform::TransformPlugin)
         .add_plugins(bevy::input::InputPlugin)
         .add_plugins(ServerPlugin::default())

@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bevy = { workspace = true, features = ["3d", "ui", "default_font"] }
+bevy = { workspace = true, features = ["3d", "ui", "default_font", "jpeg"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }

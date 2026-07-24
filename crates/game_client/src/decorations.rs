@@ -1,11 +1,13 @@
 use bevy::prelude::*;
+use game_core::decorations::{DecorationKind, decoration_layout};
 
 /// Marker for decorative world objects (trees, rocks, flowers).
 #[derive(Component)]
 pub struct Decoration;
 
-/// Spawns decorative objects scattered around the world so the player can
-/// perceive movement via parallax against fixed reference points.
+/// Spawns decorative objects from the shared `decoration_layout()` so the
+/// player perceives movement via parallax; the server spawns matching
+/// colliders for the same layout.
 pub fn spawn_decorations(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -39,23 +41,10 @@ pub fn spawn_decorations(
         ..default()
     });
 
-    // Deterministic pseudo-random scatter (no rand dependency).
-    let mut seed: u32 = 0x9E37_79B9;
-    let mut next = move || {
-        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        (seed >> 8) as f32 / 16_777_216.0
-    };
-
-    for _ in 0..40 {
-        let x = (next() - 0.5) * 80.0;
-        let z = (next() - 0.5) * 80.0;
-        // Keep spawn area clear.
-        if x.abs() < 3.0 && z.abs() < 3.0 {
-            continue;
-        }
-
-        match (next() * 10.0) as u32 {
-            0..=4 => {
+    for prop in decoration_layout() {
+        let (x, z) = (prop.position.x, prop.position.z);
+        match prop.kind {
+            DecorationKind::Tree => {
                 commands.spawn((
                     Mesh3d(trunk_mesh.clone()),
                     MeshMaterial3d(trunk_mat.clone()),
@@ -69,8 +58,7 @@ pub fn spawn_decorations(
                     Decoration,
                 ));
             }
-            5..=7 => {
-                let s = 0.6 + next() * 0.8;
+            DecorationKind::Rock(s) => {
                 commands.spawn((
                     Mesh3d(rock_mesh.clone()),
                     MeshMaterial3d(rock_mat.clone()),
@@ -79,7 +67,7 @@ pub fn spawn_decorations(
                     Decoration,
                 ));
             }
-            _ => {
+            DecorationKind::Flower => {
                 commands.spawn((
                     Mesh3d(flower_mesh.clone()),
                     MeshMaterial3d(flower_mat.clone()),
@@ -105,6 +93,6 @@ mod tests {
         app.update();
 
         let mut query = app.world_mut().query::<&Decoration>();
-        assert!(query.iter(app.world()).count() > 10);
+        assert!(query.iter(app.world()).count() > 5);
     }
 }

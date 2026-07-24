@@ -1,3 +1,4 @@
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use player::LocalPlayer;
 
@@ -5,11 +6,16 @@ const CAMERA_RADIUS: f32 = 9.9;
 const CAMERA_HEIGHT: f32 = 8.0;
 const CAMERA_SMOOTHING: f32 = 8.0;
 const ROTATION_SMOOTHING: f32 = 10.0;
+const MIN_ZOOM_RADIUS: f32 = 4.0;
+const MAX_ZOOM_RADIUS: f32 = 20.0;
+const ZOOM_SPEED: f32 = 1.5;
 
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct CameraOrbit {
     pub yaw: f32,
     pub target_yaw: f32,
+    pub radius: f32,
+    pub target_radius: f32,
 }
 
 impl Default for CameraOrbit {
@@ -17,6 +23,8 @@ impl Default for CameraOrbit {
         Self {
             yaw: std::f32::consts::FRAC_PI_4,
             target_yaw: std::f32::consts::FRAC_PI_4,
+            radius: CAMERA_RADIUS,
+            target_radius: CAMERA_RADIUS,
         }
     }
 }
@@ -74,6 +82,17 @@ pub fn rotate_camera_input(keys: Res<ButtonInput<KeyCode>>, mut orbit: ResMut<Ca
     }
 }
 
+pub fn zoom_camera_input(mut wheel: MessageReader<MouseWheel>, mut orbit: ResMut<CameraOrbit>) {
+    for event in wheel.read() {
+        let lines = match event.unit {
+            MouseScrollUnit::Line => event.y,
+            MouseScrollUnit::Pixel => event.y * 0.05,
+        };
+        orbit.target_radius =
+            (orbit.target_radius - lines * ZOOM_SPEED).clamp(MIN_ZOOM_RADIUS, MAX_ZOOM_RADIUS);
+    }
+}
+
 pub fn follow_local_player(
     time: Res<Time>,
     local: Query<&Transform, With<LocalPlayer>>,
@@ -86,11 +105,12 @@ pub fn follow_local_player(
     let dt = time.delta_secs();
     let rot_t = 1.0 - (-ROTATION_SMOOTHING * dt).exp();
     orbit.yaw += (orbit.target_yaw - orbit.yaw) * rot_t;
+    orbit.radius += (orbit.target_radius - orbit.radius) * rot_t;
 
     let offset = Vec3::new(
-        CAMERA_RADIUS * orbit.yaw.sin(),
+        orbit.radius * orbit.yaw.sin(),
         CAMERA_HEIGHT,
-        CAMERA_RADIUS * orbit.yaw.cos(),
+        orbit.radius * orbit.yaw.cos(),
     );
     let desired = target.translation + offset;
     let t = 1.0 - (-CAMERA_SMOOTHING * dt).exp();

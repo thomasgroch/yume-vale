@@ -1,4 +1,7 @@
+use avian3d::prelude::*;
 use bevy::prelude::*;
+use bevy_tnua::prelude::*;
+use bevy_tnua_avian3d::prelude::*;
 use game_core::constants::GROUND_Y;
 use game_core::id::PlayerId;
 use game_protocol::channels::ReliableChannel;
@@ -6,10 +9,11 @@ use game_protocol::{PlayerColor, Welcome};
 use lightyear::connection::client_of::ClientOf;
 use lightyear::connection::network_target::NetworkTarget;
 use lightyear::prelude::*;
-use player::spawn_player;
+use player::{YumeScheme, spawn_player};
 use tracing::info;
 
 use crate::config::ServerConfig;
+use crate::systems::setup::WalkConfig;
 
 /// Maps a client entity (LinkOf) to its player entity.
 #[derive(Component)]
@@ -44,6 +48,7 @@ pub fn on_client_connected(
     mut client_query: Query<(&RemoteId, Has<ClientOf>, &mut MessageSender<Welcome>)>,
     mut next_color: ResMut<NextPlayerColor>,
     existing_players: Query<(Entity, &player::Player)>,
+    walk_config: Res<WalkConfig>,
 ) {
     let client_entity = trigger.entity;
     let Ok((remote_id, _is_client, mut welcome_sender)) = client_query.get_mut(client_entity)
@@ -95,6 +100,15 @@ pub fn on_client_connected(
             owner: client_entity,
             lifetime: Lifetime::SessionBased,
         },
+    ));
+
+    commands.entity(player_entity).insert((
+        RigidBody::Dynamic,
+        Collider::capsule(0.35, 0.5),
+        LockedAxes::ROTATION_LOCKED,
+        TnuaAvian3dSensorShape(Collider::cylinder(0.34, 0.0)),
+        TnuaController::<YumeScheme>::default(),
+        TnuaConfig::<YumeScheme>(walk_config.0.clone()),
     ));
 }
 

@@ -17,6 +17,7 @@ pub fn apply_input_to_player(
     let direction = Direction::from_xz(dx, dz).unwrap_or(Direction::zero());
     movement.direction = direction;
     movement.running = input.run;
+    movement.jump = input.jump;
     rep_input.0 = PlayerInput {
         movement: direction,
         run: input.run,
@@ -55,6 +56,7 @@ mod tests {
             move_x: 1,
             move_z: 0,
             run: true,
+            jump: false,
         };
         let mut movement = PlayerMovement::default();
         let mut rep_input = ReplicatedPlayerInput(PlayerInput::default());
@@ -77,6 +79,7 @@ mod tests {
             move_x: diagonal_encoded,
             move_z: diagonal_encoded,
             run: false,
+            jump: false,
         };
         let mut movement = PlayerMovement::default();
         let mut rep_input = ReplicatedPlayerInput(PlayerInput::default());
@@ -98,6 +101,7 @@ mod tests {
             move_x: 0,
             move_z: 0,
             run: false,
+            jump: false,
         };
         let mut movement = PlayerMovement::default();
         let mut rep_input = ReplicatedPlayerInput(PlayerInput::default());
@@ -117,6 +121,7 @@ mod tests {
             move_x: 0,
             move_z: 0,
             run: false,
+            jump: false,
         };
         let mut movement = PlayerMovement::default();
         let mut rep_input = ReplicatedPlayerInput(PlayerInput::default());

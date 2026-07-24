@@ -67,6 +67,7 @@ pub fn gather_input(
         move_x: (movement.0.x * 127.0).round() as i8,
         move_z: (movement.0.z * 127.0).round() as i8,
         run,
+        jump: keys.pressed(KeyCode::Space),
     };
 
     if let Ok(mut sender) = senders.single_mut() {

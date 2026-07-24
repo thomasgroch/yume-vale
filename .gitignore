@@ -15,3 +15,6 @@
 # Trunk wasm client build output
 /dist/
 apps/client/dist/
+
+# Meshy AI generation outputs (source assets live in assets/models)
+/meshy_output/
