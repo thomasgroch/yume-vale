@@ -144,12 +144,35 @@ pub fn start_connection(commands: &mut Commands, config: &ClientConfig) {
             .id()
     };
 
-    // Wasm: localhost -> WebTransport (cert dev autoassinado, 127.0.0.1:5001);
-    // qualquer outro host (ex.: tailnet) -> WebSocket plain conectando de volta
-    // no host que serviu a página (porta do config, default 5002).
-    // ?transport=ws força WebSocket mesmo em localhost.
+    // Wasm: YUME_SERVER_WS_URL (compile-time, deploys como Dokploy) -> from_url
+    // direto (wss/DNS; o endereço do token netcode é nominal — o servidor não
+    // valida a whitelist). Localhost -> WebTransport (cert dev); outro host ->
+    // WebSocket plain no host da página. ?transport=ws força WS em localhost.
     #[cfg(target_arch = "wasm32")]
     let entity = {
+        if let Some(url) = option_env!("YUME_SERVER_WS_URL").filter(|u| !u.is_empty()) {
+            let Some(token_addr) = parse_addr(&config.websocket_addr, "websocket_addr") else {
+                return;
+            };
+            let Some(client) = build_netcode_client(token_addr, client_id, &netcode_config)
+            else {
+                return;
+            };
+            let entity = commands
+                .spawn((
+                    Client::default(),
+                    LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                    PeerAddr(token_addr),
+                    Link::new(None),
+                    client,
+                    ReplicationReceiver,
+                    WebSocketClientIo::from_url(aeronet_websocket::client::ClientConfig, url),
+                ))
+                .id();
+            commands.entity(entity).trigger(|e| Connect { entity: e });
+            return;
+        }
+
         let (query, page_host) = web_sys::window()
             .map(|w| {
                 (

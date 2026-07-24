@@ -1,0 +1,15 @@
+FROM rust:1-bookworm AS build
+RUN rustup target add wasm32-unknown-unknown \
+ && curl -fsSL https://github.com/trunk-rs/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz \
+    | tar -xz -C /usr/local/bin
+WORKDIR /app
+COPY . .
+# Baked into the wasm at compile time (option_env!); empty = derive from page host.
+ARG YUME_SERVER_WS_URL=""
+ENV YUME_SERVER_WS_URL=$YUME_SERVER_WS_URL
+WORKDIR /app/apps/client
+RUN trunk build --release
+
+FROM nginx:1-alpine
+COPY --from=build /app/apps/client/dist /usr/share/nginx/html
+EXPOSE 80

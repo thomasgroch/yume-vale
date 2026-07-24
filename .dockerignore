@@ -1,0 +1,7 @@
+target/
+meshy_output/
+certs/
+apps/client/dist/
+.git/
+.playwright-mcp/
+*.log
