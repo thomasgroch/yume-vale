@@ -8,7 +8,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . .
-RUN cargo build -p server
+# Jobs=2: the VPS has ~8GB RAM; parallel rustc on bevy deps OOMs the build.
+RUN CARGO_BUILD_JOBS=2 cargo build -p server
 
 FROM debian:bookworm-slim
 # Linked (not dlopened) by wayland-sys/libudev-sys, so required even headless.
