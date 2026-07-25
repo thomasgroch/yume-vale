@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use game_core::constants::{RUN_SPEED, WALK_SPEED};
 use game_protocol::{PlayerColor, PlayerPosition};
-use lightyear::prelude::{ConfirmedHistory, Interpolated};
+use lightyear::prelude::Interpolated;
 use player::{LocalPlayer, Player};
 
 use crate::connection::LocalPlayerId;
@@ -22,6 +22,11 @@ const CROSSFADE_SECS: f32 = 0.25;
 const SPEED_EMA_RATE: f32 = 8.0;
 /// Hysteresis band around each threshold so borderline speeds don't flap.
 const HYSTERESIS: f32 = 0.3;
+/// How fast the rendered transform chases the interpolated position (~55ms
+/// time constant). Linear 30Hz interpolation advances in bursts whenever the
+/// velocity changes (accelerate/stop/turn) — the chase smooths those bursts
+/// into continuous motion.
+const RENDER_SMOOTHING: f32 = 18.0;
 /// Vertical offset of the fox visual below the entity origin. The physics body
 /// sits at float_height (0.6) above the ground, while the fox GLB's origin is
 /// at its feet — without this pivot the fox would render 0.6m in the air.
@@ -292,31 +297,23 @@ pub fn mark_local_player_visuals(
     }
 }
 
-type InterpolatedPlayers<'w, 's> = Query<
-    'w,
-    's,
-    (
-        &'static PlayerPosition,
-        &'static mut Transform,
-        Option<&'static ConfirmedHistory<PlayerPosition>>,
-    ),
-    With<Interpolated>,
->;
+type InterpolatedPlayers<'w, 's> =
+    Query<'w, 's, (&'static PlayerPosition, &'static mut Transform), With<Interpolated>>;
 
-/// Copies `PlayerPosition` → `Transform.translation` for interpolated entities.
-/// Right after spawn, lightyear's interpolation timeline is still syncing and
-/// the component stays frozen (then teleports when interpolation engages).
-/// Detect that state — component unchanged from last frame while newer
-/// confirmed data keeps arriving — and snap to the newest confirmed snapshot
-/// instead: the fox steps at 30Hz for a few frames rather than freezing.
+/// Copies `PlayerPosition` → `Transform.translation` for interpolated entities,
+/// chasing the interpolated value with an exponential smoothing
+/// (`RENDER_SMOOTHING`) instead of snapping. Linear 30Hz interpolation
+/// advances in bursts whenever the velocity changes (accelerate/stop/turn),
+/// and teleports when the timeline finishes syncing after spawn — the chase
+/// absorbs both into continuous motion. On network underruns the fox simply
+/// decelerates and resumes smoothly.
 /// Runs in PostUpdate, chained before `animate_foxes`/`follow_local_player`.
-pub fn sync_position_to_transform(mut query: InterpolatedPlayers) {
-    for (pos, mut transform, history) in query.iter_mut() {
-        let newest = history.and_then(|h| h.newest_present()).map(|(_, p)| p.0);
-        transform.translation = match newest {
-            Some(n) if pos.0 == transform.translation && (n - pos.0).length() > 1e-4 => n,
-            _ => pos.0,
-        };
+pub fn sync_position_to_transform(time: Res<Time>, mut query: InterpolatedPlayers) {
+    let dt = time.delta_secs();
+    let t = 1.0 - (-RENDER_SMOOTHING * dt).exp();
+    for (pos, mut transform) in query.iter_mut() {
+        let delta = pos.0 - transform.translation;
+        transform.translation += delta * t;
     }
 }
 
@@ -445,6 +442,7 @@ mod tests {
     #[test]
     fn sync_position_uses_component_without_history() {
         let mut app = App::new();
+        app.init_resource::<Time>();
         app.add_systems(Update, sync_position_to_transform);
 
         let entity = app
@@ -455,69 +453,61 @@ mod tests {
                 Interpolated,
             ))
             .id();
-        app.update();
+        // Exponential chase: converge over several 0.1s frames.
+        for _ in 0..10 {
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(Duration::from_secs_f32(0.1));
+            app.update();
+        }
 
         let t = app.world().get::<Transform>(entity).unwrap();
-        assert!((t.translation.x - 10.0).abs() < 1e-5);
-        assert!((t.translation.z - 20.0).abs() < 1e-5);
+        assert!((t.translation.x - 10.0).abs() < 1e-2);
+        assert!((t.translation.z - 20.0).abs() < 1e-2);
     }
 
     #[test]
-    fn sync_position_snaps_to_newest_confirmed_while_component_stale() {
-        use lightyear::prelude::Tick;
-
+    fn sync_position_smooths_a_component_teleport() {
         let mut app = App::new();
+        app.init_resource::<Time>();
         app.add_systems(Update, sync_position_to_transform);
 
-        // Component frozen at spawn (0,0,0) while confirmed data flows in:
-        // sync must snap to the newest confirmed position instead of freezing.
-        let mut history = ConfirmedHistory::<PlayerPosition>::default();
-        history.insert_present(Tick(1), PlayerPosition(Vec3::new(3.0, 0.0, 0.0)));
+        // The component jumping 5m in one frame (timeline sync warm-up) must
+        // NOT teleport the rendered transform: it chases gradually.
         let entity = app
             .world_mut()
             .spawn((
                 PlayerPosition(Vec3::ZERO),
                 Transform::from_translation(Vec3::ZERO),
                 Interpolated,
-                history,
             ))
             .id();
+        app.world_mut()
+            .entity_mut(entity)
+            .get_mut::<PlayerPosition>()
+            .unwrap()
+            .0 = Vec3::new(5.0, 0.0, 0.0);
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_secs_f32(0.016));
         app.update();
 
         let t = app.world().get::<Transform>(entity).unwrap();
         assert!(
-            (t.translation.x - 3.0).abs() < 1e-5,
-            "stale component should snap to newest confirmed, got {:?}",
+            t.translation.x < 2.5,
+            "transform must chase, not teleport: got {:?}",
             t.translation
         );
-    }
-
-    #[test]
-    fn sync_position_prefers_component_when_interpolation_engaged() {
-        use lightyear::prelude::Tick;
-
-        let mut app = App::new();
-        app.add_systems(Update, sync_position_to_transform);
-
-        // Component moved this frame (interpolation engaged): it wins over
-        // the newest confirmed anchor.
-        let mut history = ConfirmedHistory::<PlayerPosition>::default();
-        history.insert_present(Tick(1), PlayerPosition(Vec3::new(3.0, 0.0, 0.0)));
-        let entity = app
-            .world_mut()
-            .spawn((
-                PlayerPosition(Vec3::new(1.0, 0.0, 0.0)),
-                Transform::from_translation(Vec3::ZERO),
-                Interpolated,
-                history,
-            ))
-            .id();
-        app.update();
-
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(Duration::from_secs_f32(0.1));
+            app.update();
+        }
         let t = app.world().get::<Transform>(entity).unwrap();
         assert!(
-            (t.translation.x - 1.0).abs() < 1e-5,
-            "engaged interpolation value should win, got {:?}",
+            (t.translation.x - 5.0).abs() < 1e-2,
+            "transform should converge to the component, got {:?}",
             t.translation
         );
     }

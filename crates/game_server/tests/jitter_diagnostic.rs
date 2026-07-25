@@ -58,6 +58,10 @@ fn physics_server_app() -> App {
 }
 
 fn client_app() -> App {
+    client_app_with_render_step(TICK)
+}
+
+fn client_app_with_render_step(render_step: Duration) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(StatesPlugin);
@@ -69,11 +73,8 @@ fn client_app() -> App {
         Update,
         seed_transforms.before(game_client::visuals::sync_position_to_transform),
     );
-    app.add_systems(
-        PostUpdate,
-        game_client::visuals::sync_position_to_transform,
-    );
-    app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
+    app.add_systems(PostUpdate, game_client::visuals::sync_position_to_transform);
+    app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(render_step));
     app.finish();
     app
 }
@@ -310,6 +311,103 @@ fn measure_movement_streams() {
             window.len()
         );
         let pat: Vec<String> = window.iter().map(|d| format!("{d:.3}")).collect();
-        println!("CLIENT Transform delta pattern (movement): {}", pat.join(" "));
+        println!(
+            "CLIENT Transform delta pattern (movement): {}",
+            pat.join(" ")
+        );
     }
+}
+
+/// Render cadence vs tick cadence: the client samples the interpolated
+/// position at ~200fps (5ms) while the server ticks at 62.5Hz in-test.
+/// Measures whether the per-sample speed ripples during acceleration
+/// (velocity jumps at 30Hz anchor boundaries) vs steady cruise.
+#[test]
+fn measure_render_cadence_mismatch() {
+    const RENDER: Duration = Duration::from_millis(5);
+
+    let mut server = physics_server_app();
+    let mut client = client_app_with_render_step(RENDER);
+    connect_client(&mut server, &mut client, 20011);
+
+    let mut connected = false;
+    for _ in 0..400 {
+        server.update();
+        client.update();
+        if server_player_transform(&mut server).is_some()
+            && client_player_position(&mut client).is_some()
+        {
+            connected = true;
+            break;
+        }
+    }
+    assert!(connected, "player should replicate");
+
+    {
+        let mut q = server
+            .world_mut()
+            .query_filtered::<&mut PlayerMovement, With<Player>>();
+        let mut movement = q.single_mut(server.world_mut()).unwrap();
+        movement.direction = Direction::from_xz(1.0, 0.0).unwrap();
+        movement.running = true;
+    }
+
+    let mut server_series: Vec<Vec3> = Vec::new();
+    let mut client_series: Vec<Vec3> = Vec::new();
+    for _ in 0..190 {
+        server.update();
+        server_series.push(server_player_transform(&mut server).unwrap());
+        for _ in 0..3 {
+            client.update();
+            client_series.push(client_player_transform(&mut client).unwrap());
+        }
+    }
+
+    let server_speeds: Vec<f32> = server_series
+        .windows(2)
+        .map(|w| (w[1] - w[0]).length() / TICK.as_secs_f32())
+        .collect();
+    let moving: Vec<usize> = server_speeds
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| **s > 1.0)
+        .map(|(i, _)| i)
+        .collect();
+    let (lo, hi) = (*moving.first().unwrap(), *moving.last().unwrap());
+
+    // Map server steps to client samples (3 samples per server step).
+    let speeds: Vec<f32> = client_series
+        .windows(2)
+        .map(|w| (w[1] - w[0]).length() / RENDER.as_secs_f32())
+        .collect();
+
+    // Acceleration window = first half of movement, cruise = second half.
+    let accel_samples: Vec<f32> = speeds[lo * 3..(lo + (hi - lo) / 2) * 3].to_vec();
+    let cruise_samples: Vec<f32> = speeds[(lo + (hi - lo) / 2) * 3..hi * 3].to_vec();
+    let stats = |v: &[f32]| {
+        let nz: Vec<f32> = v.iter().cloned().filter(|s| *s > 0.01).collect();
+        let mean = nz.iter().sum::<f32>() / nz.len().max(1) as f32;
+        let var = nz.iter().map(|s| (s - mean).powi(2)).sum::<f32>() / nz.len().max(1) as f32;
+        (mean, var.sqrt())
+    };
+    let (am, asd) = stats(&accel_samples);
+    let (cm, csd) = stats(&cruise_samples);
+    println!(
+        "CADENCE accel: mean={am:.2} std={asd:.2} (n={})",
+        accel_samples.len()
+    );
+    println!(
+        "CADENCE cruise: mean={cm:.2} std={csd:.2} (n={})",
+        cruise_samples.len()
+    );
+    let pat: Vec<String> = cruise_samples[..40.min(cruise_samples.len())]
+        .iter()
+        .map(|s| format!("{s:.1}"))
+        .collect();
+    println!("CADENCE cruise speed pattern: {}", pat.join(" "));
+    let apat: Vec<String> = accel_samples[..40.min(accel_samples.len())]
+        .iter()
+        .map(|s| format!("{s:.1}"))
+        .collect();
+    println!("CADENCE accel speed pattern: {}", apat.join(" "));
 }
