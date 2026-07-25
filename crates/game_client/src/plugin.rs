@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+use bevy_inspector_egui::bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use core::time::Duration;
 use game_core::constants::TICK_RATE_HZ;
 use game_protocol::ProtocolPlugin;
@@ -12,8 +14,9 @@ use crate::camera::{
 };
 use crate::config::ClientConfig;
 use crate::connection::{LocalPlayerId, handle_welcome, retry_connect_when_disconnected};
+use crate::debug::{DebugMode, inspector_ui, toggle_debug_mode};
 use crate::decorations::spawn_decorations;
-use crate::hud::{reconnect_button, spawn_hud, update_hud_status};
+use crate::hud::{reconnect_button, spawn_hud, update_hud_status, update_version_text};
 use crate::input::{InputState, gather_input};
 use crate::menu::{AppFlow, play_button, play_button_hover, spawn_menu};
 use crate::visuals::{
@@ -31,12 +34,18 @@ impl Plugin for ClientPlugin {
         let tick_duration = Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64);
         app.add_plugins(ClientPlugins { tick_duration });
         app.add_plugins((ProtocolPlugin, PlayerPlugin));
+        app.add_plugins((EguiPlugin::default(), DefaultInspectorConfigPlugin));
+
+        app.register_type::<game_protocol::PlayerPosition>();
+        app.register_type::<game_protocol::PlayerColor>();
+        app.register_type::<player::PlayerName>();
 
         app.insert_resource(self.config.clone());
         app.init_resource::<InputState>();
         app.init_resource::<LocalPlayerId>();
         app.init_resource::<CameraOrbit>();
         app.init_resource::<AppFlow>();
+        app.init_resource::<DebugMode>();
 
         app.add_systems(
             Startup,
@@ -70,11 +79,14 @@ impl Plugin for ClientPlugin {
             (
                 retry_connect_when_disconnected,
                 update_hud_status,
+                update_version_text,
                 reconnect_button,
                 play_button,
                 play_button_hover,
+                toggle_debug_mode,
             ),
         );
+        app.add_systems(EguiPrimaryContextPass, inspector_ui);
         app.add_systems(
             PostUpdate,
             (

@@ -1,4 +1,4 @@
-use bevy::prelude::Component;
+use bevy::prelude::{Component, Reflect};
 use game_core::id::PlayerId;
 use game_core::math::Direction;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ pub struct Player {
     pub id: PlayerId,
 }
 
-#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Component, Reflect, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlayerName(pub String);
 
 #[derive(Component, Debug, Clone, PartialEq)]

@@ -1,12 +1,12 @@
 use bevy::math::curve::{Curve, Ease, FunctionCurve, Interval};
-use bevy::prelude::{Component, Srgba, Vec3};
+use bevy::prelude::{Component, Reflect, Srgba, Vec3};
 use game_core::player_state::PlayerInput;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 
 /// The authoritative position of a player, replicated from server to clients.
 /// Lightyear's interpolation system will smooth this component on clients.
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerPosition(pub Vec3);
 
 impl Deref for PlayerPosition {
@@ -37,7 +37,7 @@ pub struct ReplicatedPlayerInput(pub PlayerInput);
 
 /// Server-assigned player color as a `PLAYER_PALETTE` index, replicated so
 /// every client renders the same player in the same color.
-#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct PlayerColor(pub u8);
 
 /// Shared pastel palette indexed by `PlayerColor`; identical on server and clients.

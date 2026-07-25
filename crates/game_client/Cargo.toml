@@ -6,7 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bevy = { workspace = true, features = ["3d", "ui", "default_font", "jpeg"] }
+bevy = { workspace = true, features = ["3d", "ui", "default_font"] }
+bevy-inspector-egui = "0.37"
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }
@@ -17,6 +18,7 @@ lightyear = { workspace = true, features = ["client", "udp", "netcode", "std", "
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lightyear = { workspace = true, features = ["client", "netcode", "replication", "interpolation", "std", "webtransport", "websocket"] }
 web-sys = { version = "0.3", features = ["Window", "Location"] }
+js-sys = "0.3"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 aeronet_websocket.workspace = true
 
