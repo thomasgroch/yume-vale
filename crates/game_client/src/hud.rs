@@ -61,7 +61,7 @@ pub fn update_hud_status(
     };
     let (label, rgb) = match client.single() {
         Ok((true, _, _)) => match names.single() {
-            Ok(name) => (format!("Conectado — {}", name.0), (0.4, 0.9, 0.4)),
+            Ok(name) => (format!("Conectado - {}", name.0), (0.4, 0.9, 0.4)),
             Err(_) => ("Conectado".to_string(), (0.4, 0.9, 0.4)),
         },
         Ok((_, true, _)) => ("Conectando...".to_string(), (0.9, 0.8, 0.3)),
@@ -148,6 +148,6 @@ mod tests {
             player::LocalPlayer,
         ));
         app.update();
-        assert_eq!(status_text(&mut app), "Conectado — Player 1");
+        assert_eq!(status_text(&mut app), "Conectado - Player 1");
     }
 }

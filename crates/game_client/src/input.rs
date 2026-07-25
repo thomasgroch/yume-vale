@@ -32,12 +32,7 @@ pub fn read_keyboard_input(
         right += 1.0;
     }
 
-    let (sin, cos) = yaw.sin_cos();
-    let forward = -back;
-    let world_x = cos * right - sin * forward;
-    let world_z = -sin * right - cos * forward;
-
-    let movement = Direction::from_xz(world_x, world_z).unwrap_or(Direction::zero());
+    let movement = to_world_direction(right, back, yaw);
     let run = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
 
     let action = if keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::KeyF) {
@@ -49,8 +44,37 @@ pub fn read_keyboard_input(
     (movement, run, action)
 }
 
+fn to_world_direction(right: f32, back: f32, yaw: f32) -> Direction {
+    let (sin, cos) = yaw.sin_cos();
+    let forward = -back;
+    let world_x = cos * right - sin * forward;
+    let world_z = -sin * right - cos * forward;
+    Direction::from_xz(world_x, world_z).unwrap_or(Direction::zero())
+}
+
+const SWIPE_DEAD_ZONE: f32 = 24.0;
+const SWIPE_MAX_RADIUS: f32 = 120.0;
+const SWIPE_RUN_THRESHOLD: f32 = 0.85;
+
+/// Virtual joystick: drag from `start` to `current` gives a camera-relative
+/// movement direction; dragging near the max radius sets run.
+pub fn swipe_direction(start: Vec2, current: Vec2, yaw: f32) -> Option<(Direction, bool)> {
+    let delta = current - start;
+    let dist = delta.length();
+    if dist < SWIPE_DEAD_ZONE {
+        return None;
+    }
+    let magnitude = ((dist - SWIPE_DEAD_ZONE) / (SWIPE_MAX_RADIUS - SWIPE_DEAD_ZONE)).min(1.0);
+    let dir = to_world_direction(delta.x, delta.y, yaw);
+    if dir.is_zero() {
+        return None;
+    }
+    Some((dir, magnitude >= SWIPE_RUN_THRESHOLD))
+}
+
 pub fn gather_input(
     keys: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
     orbit: Res<CameraOrbit>,
     flow: Res<crate::menu::AppFlow>,
     mut state: ResMut<InputState>,
@@ -60,6 +84,15 @@ pub fn gather_input(
         return;
     }
     let (movement, run, _action) = read_keyboard_input(&keys, orbit.yaw);
+    let (movement, run) = if movement.is_zero() {
+        touches
+            .iter()
+            .next()
+            .and_then(|t| swipe_direction(t.start_position(), t.position(), orbit.yaw))
+            .unwrap_or((movement, run))
+    } else {
+        (movement, run)
+    };
     state.tick = state.tick.wrapping_add(1);
 
     let input = ClientInput {
@@ -197,6 +230,41 @@ mod tests {
             -expected,
             dir.0
         );
+    }
+
+    #[test]
+    fn swipe_below_dead_zone_is_none() {
+        assert!(swipe_direction(Vec2::ZERO, Vec2::new(10.0, 5.0), 0.0).is_none());
+    }
+
+    #[test]
+    fn swipe_up_moves_forward_walk() {
+        let (dir, run) = swipe_direction(Vec2::ZERO, Vec2::new(0.0, -60.0), 0.0).unwrap();
+        assert!(dir.0.z < -0.99, "expected forward, got {:?}", dir.0);
+        assert!(dir.0.x.abs() < 1e-4);
+        assert!(!run);
+    }
+
+    #[test]
+    fn swipe_far_diagonal_moves_and_runs() {
+        let (dir, run) = swipe_direction(Vec2::ZERO, Vec2::new(100.0, -100.0), 0.0).unwrap();
+        assert!(
+            dir.0.x > 0.5 && dir.0.z < -0.5,
+            "expected diagonal, got {:?}",
+            dir.0
+        );
+        assert!(run, "full-radius drag should run");
+    }
+
+    #[test]
+    fn swipe_respects_camera_yaw() {
+        let (dir, _) = swipe_direction(
+            Vec2::ZERO,
+            Vec2::new(0.0, -60.0),
+            std::f32::consts::FRAC_PI_2,
+        )
+        .unwrap();
+        assert!(dir.0.x < -0.99, "expected -X at yaw=90°, got {:?}", dir.0);
     }
 
     #[test]
