@@ -4,17 +4,24 @@ use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use game_core::constants::{RUN_SPEED, WALK_SPEED};
 use game_protocol::{PlayerColor, PlayerPosition};
-use lightyear::prelude::Interpolated;
+use lightyear::prelude::{ConfirmedHistory, Interpolated};
 use player::{LocalPlayer, Player};
 
 use crate::connection::LocalPlayerId;
 
 /// Below this planar speed (m/s) the fox plays the idle clip.
 const IDLE_SPEED_THRESHOLD: f32 = 0.5;
+/// Speed at which the fox switches between walk and run clips.
+const RUN_SPEED_THRESHOLD: f32 = (WALK_SPEED + RUN_SPEED) * 0.5;
 /// How fast the fox turns toward its movement direction (higher = snappier).
 const TURN_SMOOTHING: f32 = 12.0;
-/// Seconds to blend between animation clips.
+/// Seconds for a clip weight to slide fully from 0→1 (and back).
 const CROSSFADE_SECS: f32 = 0.25;
+/// EMA rate for the speed estimate (~125ms time constant): keeps residual
+/// network jitter from chattering the clip thresholds.
+const SPEED_EMA_RATE: f32 = 8.0;
+/// Hysteresis band around each threshold so borderline speeds don't flap.
+const HYSTERESIS: f32 = 0.3;
 /// Vertical offset of the fox visual below the entity origin. The physics body
 /// sits at float_height (0.6) above the ground, while the fox GLB's origin is
 /// at its feet — without this pivot the fox would render 0.6m in the air.
@@ -79,14 +86,14 @@ pub fn load_fox_assets(
     });
 }
 
-/// Per-player animation state: which clip is active, which one is fading out
-/// (manual crossfade — `AnimationTransitions` only tracks one global clip),
-/// where the entity was last frame, and the scene-spawned `AnimationPlayer`.
+/// Per-player animation state: the clip being blended toward, the
+/// EMA-smoothed speed, where the entity was last frame, and the
+/// scene-spawned `AnimationPlayer`. Weights blend continuously every frame —
+/// no crossfade restarts, so rapid clip changes never snap.
 #[derive(Component)]
 pub struct FoxAnimation {
     current: FoxClip,
-    fading_from: Option<FoxClip>,
-    fade_elapsed: f32,
+    speed: f32,
     prev_translation: Vec3,
     animator: Option<Entity>,
 }
@@ -143,8 +150,7 @@ pub fn attach_player_visuals(
             Transform::from_translation(position.0),
             FoxAnimation {
                 current: FoxClip::Idle,
-                fading_from: None,
-                fade_elapsed: 0.0,
+                speed: 0.0,
                 prev_translation: position.0,
                 animator: None,
             },
@@ -203,8 +209,10 @@ pub fn setup_fox_animators(
 }
 
 /// Drives each fox from its replicated movement: estimates planar speed from
-/// the per-frame translation delta, switches idle/walk/run clips accordingly,
-/// and rotates the entity to face its movement direction.
+/// the per-frame translation delta (EMA-smoothed), picks idle/walk/run with
+/// hysteresis, blends every clip's weight toward its target each frame (so
+/// interrupted fades and rapid changes never snap), and rotates the entity to
+/// face its movement direction.
 /// Runs in PostUpdate, chained after `sync_position_to_transform`.
 pub fn animate_foxes(
     time: Res<Time>,
@@ -223,51 +231,35 @@ pub fn animate_foxes(
         let delta = transform.translation - state.prev_translation;
         state.prev_translation = transform.translation;
         let planar = Vec3::new(delta.x, 0.0, delta.z);
-        let speed = planar.length() / dt;
+        let raw_speed = planar.length() / dt;
+        let alpha = 1.0 - (-SPEED_EMA_RATE * dt).exp();
+        state.speed += (raw_speed - state.speed) * alpha;
+        let speed = state.speed;
 
-        let clip = if speed < IDLE_SPEED_THRESHOLD {
-            FoxClip::Idle
-        } else if speed < (WALK_SPEED + RUN_SPEED) * 0.5 {
-            FoxClip::Walk
-        } else {
-            FoxClip::Run
+        let clip = match state.current {
+            FoxClip::Idle if speed > IDLE_SPEED_THRESHOLD + HYSTERESIS => FoxClip::Walk,
+            FoxClip::Walk if speed < IDLE_SPEED_THRESHOLD - HYSTERESIS => FoxClip::Idle,
+            FoxClip::Walk if speed > RUN_SPEED_THRESHOLD + HYSTERESIS => FoxClip::Run,
+            FoxClip::Run if speed < RUN_SPEED_THRESHOLD - HYSTERESIS => FoxClip::Walk,
+            c => c,
         };
-        if clip != state.current {
-            let previous = state.current;
-            state.current = clip;
-            state.fading_from = Some(previous);
-            state.fade_elapsed = 0.0;
-            if let Some(animator) = state.animator {
-                if let Ok(mut player) = anim_players.get_mut(animator) {
-                    // Drop any clip left over from an interrupted fade, keep
-                    // only the outgoing one, and start the new one at zero.
-                    for node in fox.nodes() {
-                        if node != fox.node(previous) {
-                            player.stop(node);
-                        }
+        state.current = clip;
+
+        if let Some(animator) = state.animator {
+            if let Ok(mut player) = anim_players.get_mut(animator) {
+                let step = dt / CROSSFADE_SECS;
+                for node in fox.nodes() {
+                    let target = if node == fox.node(clip) { 1.0 } else { 0.0 };
+                    // A never-played clip starts at weight 0 and blends in;
+                    // already-playing clips slide toward their target.
+                    if player.animation(node).is_none() {
+                        player.play(node).repeat().set_weight(0.0);
                     }
-                    player.play(fox.node(clip)).repeat().set_weight(0.0);
-                }
-            }
-        }
-        if let Some(from) = state.fading_from {
-            state.fade_elapsed += dt;
-            let t = (state.fade_elapsed / CROSSFADE_SECS).min(1.0);
-            if let Some(animator) = state.animator {
-                if let Ok(mut player) = anim_players.get_mut(animator) {
-                    if let Some(outgoing) = player.animation_mut(fox.node(from)) {
-                        outgoing.set_weight(1.0 - t);
-                    }
-                    if let Some(incoming) = player.animation_mut(fox.node(state.current)) {
-                        incoming.set_weight(t);
-                    }
-                    if t >= 1.0 {
-                        player.stop(fox.node(from));
+                    if let Some(anim) = player.animation_mut(node) {
+                        let w = anim.weight();
+                        anim.set_weight(w + (target - w).clamp(-step, step));
                     }
                 }
-            }
-            if t >= 1.0 {
-                state.fading_from = None;
             }
         }
 
@@ -300,13 +292,31 @@ pub fn mark_local_player_visuals(
     }
 }
 
+type InterpolatedPlayers<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static PlayerPosition,
+        &'static mut Transform,
+        Option<&'static ConfirmedHistory<PlayerPosition>>,
+    ),
+    With<Interpolated>,
+>;
+
 /// Copies `PlayerPosition` → `Transform.translation` for interpolated entities.
+/// Right after spawn, lightyear's interpolation timeline is still syncing and
+/// the component stays frozen (then teleports when interpolation engages).
+/// Detect that state — component unchanged from last frame while newer
+/// confirmed data keeps arriving — and snap to the newest confirmed snapshot
+/// instead: the fox steps at 30Hz for a few frames rather than freezing.
 /// Runs in PostUpdate, chained before `animate_foxes`/`follow_local_player`.
-pub fn sync_position_to_transform(
-    mut query: Query<(&PlayerPosition, &mut Transform), With<Interpolated>>,
-) {
-    for (pos, mut transform) in query.iter_mut() {
-        transform.translation = pos.0;
+pub fn sync_position_to_transform(mut query: InterpolatedPlayers) {
+    for (pos, mut transform, history) in query.iter_mut() {
+        let newest = history.and_then(|h| h.newest_present()).map(|(_, p)| p.0);
+        transform.translation = match newest {
+            Some(n) if pos.0 == transform.translation && (n - pos.0).length() > 1e-4 => n,
+            _ => pos.0,
+        };
     }
 }
 
@@ -347,7 +357,93 @@ mod tests {
     }
 
     #[test]
-    fn sync_position_to_transform_copies_translation() {
+    fn animate_foxes_switches_clips_with_speed() {
+        let mut app = App::new();
+        app.add_plugins(bevy::asset::AssetPlugin::default());
+        insert_fox_assets(&mut app);
+        app.init_resource::<Time>();
+        app.add_systems(Update, animate_foxes);
+
+        let animator = app.world_mut().spawn(AnimationPlayer::default()).id();
+        let entity = app
+            .world_mut()
+            .spawn((
+                Transform::default(),
+                FoxAnimation {
+                    current: FoxClip::Idle,
+                    speed: 0.0,
+                    prev_translation: Vec3::ZERO,
+                    animator: Some(animator),
+                },
+            ))
+            .id();
+
+        // Advance 0.1s without moving: stays idle.
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_secs_f32(0.1));
+        app.update();
+        let state = app.world().get::<FoxAnimation>(entity).unwrap();
+        assert_eq!(state.current, FoxClip::Idle);
+
+        // Sustain 5 m/s over several frames: the EMA converges and the fox
+        // switches to walk (with hysteresis, ~0.3s of sustained speed).
+        for i in 1..=8 {
+            app.world_mut()
+                .entity_mut(entity)
+                .get_mut::<Transform>()
+                .unwrap()
+                .translation = Vec3::new(0.5 * i as f32, 0.0, 0.0);
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(Duration::from_secs_f32(0.1));
+            app.update();
+        }
+        let state = app.world().get::<FoxAnimation>(entity).unwrap();
+        assert_eq!(state.current, FoxClip::Walk);
+
+        // Sustain 10 m/s: converges to run; weight blends gradually.
+        for i in 1..=8 {
+            app.world_mut()
+                .entity_mut(entity)
+                .get_mut::<Transform>()
+                .unwrap()
+                .translation = Vec3::new(4.0 + i as f32, 0.0, 0.0);
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(Duration::from_secs_f32(0.1));
+            app.update();
+            if i == 3 {
+                let state = app.world().get::<FoxAnimation>(entity).unwrap();
+                assert_eq!(state.current, FoxClip::Run);
+                let player = app.world().get::<AnimationPlayer>(animator).unwrap();
+                let fox = app.world().resource::<FoxAssets>();
+                let run_w = player.animation(fox.run).map(|a| a.weight()).unwrap_or(0.0);
+                assert!(
+                    (0.0..1.0).contains(&run_w),
+                    "run weight should be mid-blend right after switching, got {run_w}"
+                );
+            }
+        }
+        let player = app.world().get::<AnimationPlayer>(animator).unwrap();
+        let fox = app.world().resource::<FoxAssets>();
+        let run_w = player.animation(fox.run).map(|a| a.weight()).unwrap_or(0.0);
+        assert!(
+            (run_w - 1.0).abs() < 1e-5,
+            "run weight should fully converge, got {run_w}"
+        );
+
+        // Moving along +X: fox must yaw toward +X (rotation away from identity).
+        let t = app.world().get::<Transform>(entity).unwrap();
+        assert_ne!(
+            t.rotation,
+            Quat::IDENTITY,
+            "fox should turn toward its movement direction"
+        );
+    }
+
+    #[test]
+    fn sync_position_uses_component_without_history() {
         let mut app = App::new();
         app.add_systems(Update, sync_position_to_transform);
 
@@ -364,6 +460,66 @@ mod tests {
         let t = app.world().get::<Transform>(entity).unwrap();
         assert!((t.translation.x - 10.0).abs() < 1e-5);
         assert!((t.translation.z - 20.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn sync_position_snaps_to_newest_confirmed_while_component_stale() {
+        use lightyear::prelude::Tick;
+
+        let mut app = App::new();
+        app.add_systems(Update, sync_position_to_transform);
+
+        // Component frozen at spawn (0,0,0) while confirmed data flows in:
+        // sync must snap to the newest confirmed position instead of freezing.
+        let mut history = ConfirmedHistory::<PlayerPosition>::default();
+        history.insert_present(Tick(1), PlayerPosition(Vec3::new(3.0, 0.0, 0.0)));
+        let entity = app
+            .world_mut()
+            .spawn((
+                PlayerPosition(Vec3::ZERO),
+                Transform::from_translation(Vec3::ZERO),
+                Interpolated,
+                history,
+            ))
+            .id();
+        app.update();
+
+        let t = app.world().get::<Transform>(entity).unwrap();
+        assert!(
+            (t.translation.x - 3.0).abs() < 1e-5,
+            "stale component should snap to newest confirmed, got {:?}",
+            t.translation
+        );
+    }
+
+    #[test]
+    fn sync_position_prefers_component_when_interpolation_engaged() {
+        use lightyear::prelude::Tick;
+
+        let mut app = App::new();
+        app.add_systems(Update, sync_position_to_transform);
+
+        // Component moved this frame (interpolation engaged): it wins over
+        // the newest confirmed anchor.
+        let mut history = ConfirmedHistory::<PlayerPosition>::default();
+        history.insert_present(Tick(1), PlayerPosition(Vec3::new(3.0, 0.0, 0.0)));
+        let entity = app
+            .world_mut()
+            .spawn((
+                PlayerPosition(Vec3::new(1.0, 0.0, 0.0)),
+                Transform::from_translation(Vec3::ZERO),
+                Interpolated,
+                history,
+            ))
+            .id();
+        app.update();
+
+        let t = app.world().get::<Transform>(entity).unwrap();
+        assert!(
+            (t.translation.x - 1.0).abs() < 1e-5,
+            "engaged interpolation value should win, got {:?}",
+            t.translation
+        );
     }
 
     #[test]
@@ -464,72 +620,6 @@ mod tests {
     }
 
     #[test]
-    fn animate_foxes_switches_clips_with_speed() {
-        let mut app = App::new();
-        app.add_plugins(bevy::asset::AssetPlugin::default());
-        insert_fox_assets(&mut app);
-        app.init_resource::<Time>();
-        app.add_systems(Update, animate_foxes);
-
-        let animator = app.world_mut().spawn(AnimationPlayer::default()).id();
-        let entity = app
-            .world_mut()
-            .spawn((
-                Transform::default(),
-                FoxAnimation {
-                    current: FoxClip::Idle,
-                    fading_from: None,
-                    fade_elapsed: 0.0,
-                    prev_translation: Vec3::ZERO,
-                    animator: Some(animator),
-                },
-            ))
-            .id();
-
-        // Advance 0.1s without moving: stays idle.
-        app.world_mut()
-            .resource_mut::<Time>()
-            .advance_by(Duration::from_secs_f32(0.1));
-        app.update();
-        let state = app.world().get::<FoxAnimation>(entity).unwrap();
-        assert_eq!(state.current, FoxClip::Idle);
-
-        // 0.5m in 0.1s = 5 m/s (WALK_SPEED): switches to walk.
-        app.world_mut()
-            .entity_mut(entity)
-            .get_mut::<Transform>()
-            .unwrap()
-            .translation = Vec3::new(0.5, 0.0, 0.0);
-        app.world_mut()
-            .resource_mut::<Time>()
-            .advance_by(Duration::from_secs_f32(0.1));
-        app.update();
-        let state = app.world().get::<FoxAnimation>(entity).unwrap();
-        assert_eq!(state.current, FoxClip::Walk);
-
-        // Another 1.0m in 0.1s = 10 m/s (RUN_SPEED): switches to run.
-        app.world_mut()
-            .entity_mut(entity)
-            .get_mut::<Transform>()
-            .unwrap()
-            .translation = Vec3::new(1.5, 0.0, 0.0);
-        app.world_mut()
-            .resource_mut::<Time>()
-            .advance_by(Duration::from_secs_f32(0.1));
-        app.update();
-        let state = app.world().get::<FoxAnimation>(entity).unwrap();
-        assert_eq!(state.current, FoxClip::Run);
-
-        // Moving along +X: fox must yaw toward +X (rotation away from identity).
-        let t = app.world().get::<Transform>(entity).unwrap();
-        assert_ne!(
-            t.rotation,
-            Quat::IDENTITY,
-            "fox should turn toward its movement direction"
-        );
-    }
-
-    #[test]
     fn setup_fox_animators_links_descendant_animator() {
         let mut app = App::new();
         app.add_plugins(bevy::asset::AssetPlugin::default());
@@ -543,8 +633,7 @@ mod tests {
                 Transform::default(),
                 FoxAnimation {
                     current: FoxClip::Idle,
-                    fading_from: None,
-                    fade_elapsed: 0.0,
+                    speed: 0.0,
                     prev_translation: Vec3::ZERO,
                     animator: None,
                 },

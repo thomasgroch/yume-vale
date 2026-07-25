@@ -180,8 +180,7 @@ pub fn start_connection(commands: &mut Commands, config: &ClientConfig) {
             let Some(token_addr) = parse_addr(&config.websocket_addr, "websocket_addr") else {
                 return;
             };
-            let Some(client) = build_netcode_client(token_addr, client_id, &netcode_config)
-            else {
+            let Some(client) = build_netcode_client(token_addr, client_id, &netcode_config) else {
                 return;
             };
             let entity = commands
