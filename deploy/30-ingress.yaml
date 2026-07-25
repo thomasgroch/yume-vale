@@ -1,0 +1,63 @@
+# Ingress layout for yume.lab.thomasdev.xyz:
+#   /    -> yume-client (static wasm, nginx)
+#   /ws  -> yume-server:5002 (WebSocket; Traefik strips the /ws prefix,
+#           exactly what crates/game_client/src/connection.rs expects)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-ws
+  namespace: yume-vale
+spec:
+  stripPrefix:
+    prefixes:
+      - /ws
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yume-web
+  namespace: yume-vale
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: yume.lab.thomasdev.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: yume-client
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - yume.lab.thomasdev.xyz
+      secretName: yume-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yume-ws
+  namespace: yume-vale
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: yume-vale-strip-ws@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: yume.lab.thomasdev.xyz
+      http:
+        paths:
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: yume-server
+                port:
+                  number: 5002
+  tls:
+    - hosts:
+        - yume.lab.thomasdev.xyz
+      secretName: yume-tls

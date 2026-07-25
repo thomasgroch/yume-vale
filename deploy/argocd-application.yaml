@@ -1,0 +1,24 @@
+# Argo CD Application — applied once by hand (excluded from the app's own sync
+# to avoid recursion): kubectl apply -f deploy/argocd-application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: yume-vale
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/thomasgroch/yume-vale.git
+    targetRevision: main
+    path: deploy
+    directory:
+      exclude: argocd-application.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: yume-vale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

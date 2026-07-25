@@ -1,0 +1,87 @@
+# Yume Vale authoritative game server (Bevy + Lightyear).
+# One process, 3 listeners: UDP:5000 (native), WT:5001 (dev-only, not exposed),
+# WS:5002 (browser fallback — exposed via Ingress /ws path).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yume-server
+  namespace: yume-vale
+  labels:
+    app: yume-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # single authoritative world; no rolling state handoff
+  selector:
+    matchLabels:
+      app: yume-server
+  template:
+    metadata:
+      labels:
+        app: yume-server
+    spec:
+      containers:
+        - name: server
+          image: ghcr.io/thomasgroch/yume-vale-server:latest
+          imagePullPolicy: Always
+          ports:
+            - name: netcode-udp
+              containerPort: 5000
+              protocol: UDP
+            - name: websocket
+              containerPort: 5002
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          readinessProbe:
+            tcpSocket:
+              port: websocket
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: websocket
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+# ClusterIP: WebSocket (5002) reached by Traefik through the Ingress /ws route.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yume-server
+  namespace: yume-vale
+  labels:
+    app: yume-server
+spec:
+  type: ClusterIP
+  selector:
+    app: yume-server
+  ports:
+    - name: websocket
+      port: 5002
+      targetPort: websocket
+      protocol: TCP
+---
+# LoadBalancer (k3s ServiceLB): native clients connect straight to UDP 5000
+# on the node's public IP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yume-server-udp
+  namespace: yume-vale
+  labels:
+    app: yume-server
+spec:
+  type: LoadBalancer
+  selector:
+    app: yume-server
+  ports:
+    - name: netcode-udp
+      port: 5000
+      targetPort: netcode-udp
+      protocol: UDP

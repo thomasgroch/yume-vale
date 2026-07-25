@@ -1,0 +1,57 @@
+# Yume Vale web client: wasm build served as static files by nginx.
+# Served over HTTPS, it auto-derives wss://{host}/ws (see connection.rs).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yume-client
+  namespace: yume-vale
+  labels:
+    app: yume-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yume-client
+  template:
+    metadata:
+      labels:
+        app: yume-client
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/thomasgroch/yume-vale-client:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yume-client
+  namespace: yume-vale
+  labels:
+    app: yume-client
+spec:
+  type: ClusterIP
+  selector:
+    app: yume-client
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
