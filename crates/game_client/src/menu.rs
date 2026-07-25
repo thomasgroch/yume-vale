@@ -114,7 +114,7 @@ pub fn spawn_menu(mut commands: Commands) {
                 ));
             });
             root.spawn((
-                Text::new("WASD ou setas: mover  ·  Shift: correr  ·  Q/E: girar a câmera  ·  Espaço: pular"),
+                Text::new("WASD ou setas: mover  |  Shift: correr  |  Q/E: girar a câmera  |  Espaço: pular"),
                 TextFont {
                     font_size: FontSize::Px(14.0),
                     ..default()
