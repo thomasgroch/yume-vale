@@ -1,7 +1,15 @@
 FROM rust:1.96-bookworm AS build
 RUN rustup target add wasm32-unknown-unknown \
  && curl -fsSL "https://github.com/trunk-rs/trunk/releases/latest/download/trunk-$(uname -m)-unknown-linux-gnu.tar.gz" \
-    | tar -xz -C /usr/local/bin
+    | tar -xz -C /usr/local/bin \
+ && curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_131/binaryen-version_131-x86_64-linux.tar.gz" \
+    | tar -xz -C /opt
+# trunk runs wasm-opt without feature flags, and this wasm uses bulk-memory
+# (Rust >= 1.87 default), which trunk's bundled v123 rejects. A PATH shim
+# (found via trunk's find_system before its cache) runs binaryen v131 with
+# the required features enabled instead.
+RUN printf '#!/bin/sh\nexec /opt/binaryen-version_131/bin/wasm-opt --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext "$@"\n' \
+    > /usr/local/bin/wasm-opt && chmod +x /usr/local/bin/wasm-opt
 WORKDIR /app
 COPY . .
 # certs/ is gitignored (dev-only); the WT digest include_str! needs a file to
@@ -10,8 +18,6 @@ RUN mkdir -p certs && echo 00 > certs/digest.txt
 # Baked into the wasm at compile time (option_env!); empty = derive from page host.
 ARG YUME_SERVER_WS_URL=""
 ENV YUME_SERVER_WS_URL=$YUME_SERVER_WS_URL
-# v123 (trunk default) rejects this wasm's bulk-memory ops.
-ENV TRUNK_TOOLS_WASM_OPT=version_131
 WORKDIR /app/apps/client
 # Release profile: CI runners have 16GB (LTO + wasm-opt OOMed the old 8GB VPS).
 # Jobs=2 keeps peak RAM comfortable.
