@@ -41,3 +41,25 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/yume-vale-${{ matrix.name }}:latest
             ghcr.io/${{ github.repository_owner }}/yume-vale-${{ matrix.name }}:sha-${{ github.sha }}
+
+  # Pin the freshly built image sha into the k8s manifests so Argo CD sees a
+  # diff and rolls the pods (plain `:latest` never changes the manifests).
+  # [skip ci] on the commit avoids re-triggering this workflow.
+  rollout:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin image sha in manifests
+        run: |
+          sed -i -E "s|(yume-vale-server:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/10-server.yaml
+          sed -i -E "s|(yume-vale-client:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/20-client.yaml
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy/10-server.yaml deploy/20-client.yaml
+          git commit -m "deploy: pin images to sha-${{ github.sha }} [skip ci]" || exit 0
+          git push
