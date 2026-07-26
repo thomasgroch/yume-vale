@@ -7,8 +7,8 @@ RUN rustup target add wasm32-unknown-unknown \
 # trunk runs wasm-opt without feature flags, and this wasm uses bulk-memory
 # (Rust >= 1.87 default), which trunk's bundled v123 rejects. A PATH shim
 # (found via trunk's find_system before its cache) runs binaryen v131 with
-# the required features enabled instead.
-RUN printf '#!/bin/sh\nexec /opt/binaryen-version_131/bin/wasm-opt --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext "$@"\n' \
+# the required features enabled instead. The trailing -Oz overrides trunk's -O.
+RUN printf '#!/bin/sh\nexec /opt/binaryen-version_131/bin/wasm-opt --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext "$@" -Oz\n' \
     > /usr/local/bin/wasm-opt && chmod +x /usr/local/bin/wasm-opt
 WORKDIR /app
 COPY . .

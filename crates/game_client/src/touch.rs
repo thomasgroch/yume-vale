@@ -133,15 +133,16 @@ fn to_ui_pos(window_pos: Vec2, window_height: f32) -> Vec2 {
     Vec2::new(window_pos.x, window_height - window_pos.y)
 }
 
+/// Whether a window position lies inside the jump button zone.
+pub fn in_jump_zone(pos: Vec2, window: &Window) -> bool {
+    pos.x > window.width() * (1.0 - JUMP_ZONE_RIGHT) && pos.y < window.height() * JUMP_ZONE_BOTTOM
+}
+
 /// The first touch that did not start inside the jump button zone.
 pub fn movement_touch_id(touches: &Touches, window: &Window) -> Option<u64> {
-    let (w, h) = (window.width(), window.height());
     touches
         .iter()
-        .find(|t| {
-            let start = t.start_position();
-            !(start.x > w * (1.0 - JUMP_ZONE_RIGHT) && start.y < h * JUMP_ZONE_BOTTOM)
-        })
+        .find(|t| !in_jump_zone(t.start_position(), window))
         .map(|t| t.id())
 }
 

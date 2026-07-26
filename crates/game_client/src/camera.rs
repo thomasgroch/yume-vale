@@ -1,6 +1,9 @@
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use player::LocalPlayer;
+
+use crate::touch::{in_jump_zone, movement_touch_id};
 
 const CAMERA_RADIUS: f32 = 9.9;
 const CAMERA_HEIGHT: f32 = 8.0;
@@ -9,6 +12,8 @@ const ROTATION_SMOOTHING: f32 = 10.0;
 const MIN_ZOOM_RADIUS: f32 = 4.0;
 const MAX_ZOOM_RADIUS: f32 = 20.0;
 const ZOOM_SPEED: f32 = 1.5;
+const TOUCH_ROTATE_SPEED: f32 = 0.005;
+const TOUCH_ZOOM_SPEED: f32 = 0.02;
 
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct CameraOrbit {
@@ -91,6 +96,38 @@ pub fn zoom_camera_input(mut wheel: MessageReader<MouseWheel>, mut orbit: ResMut
         orbit.target_radius =
             (orbit.target_radius - lines * ZOOM_SPEED).clamp(MIN_ZOOM_RADIUS, MAX_ZOOM_RADIUS);
     }
+}
+
+/// Second simultaneous touch (the first drives the movement joystick): drag
+/// horizontally to orbit the camera, vertically to zoom (up = in).
+pub fn touch_camera_input(
+    touches: Res<Touches>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    mut orbit: ResMut<CameraOrbit>,
+    mut prev: Local<Option<(u64, Vec2)>>,
+) {
+    let Ok(window) = window.single() else {
+        *prev = None;
+        return;
+    };
+    let move_id = movement_touch_id(&touches, window);
+    let cam_touch = touches
+        .iter()
+        .find(|t| Some(t.id()) != move_id && !in_jump_zone(t.start_position(), window));
+    let Some(cam_touch) = cam_touch else {
+        *prev = None;
+        return;
+    };
+    let pos = cam_touch.position();
+    if let Some((id, prev_pos)) = *prev {
+        if id == cam_touch.id() {
+            let delta = pos - prev_pos;
+            orbit.target_yaw += delta.x * TOUCH_ROTATE_SPEED;
+            orbit.target_radius = (orbit.target_radius - delta.y * TOUCH_ZOOM_SPEED)
+                .clamp(MIN_ZOOM_RADIUS, MAX_ZOOM_RADIUS);
+        }
+    }
+    *prev = Some((cam_touch.id(), pos));
 }
 
 pub fn follow_local_player(

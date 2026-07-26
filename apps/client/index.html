@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>Yume Vale</title>
     <style>
         html, body {
@@ -12,6 +17,13 @@
             height: 100%;
             overflow: hidden;
             background: #111;
+            /* The canvas is the game: no page zoom/scroll/pull-to-refresh,
+               no long-press text selection or iOS callout. */
+            touch-action: none;
+            overscroll-behavior: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
         }
         canvas {
             display: block;

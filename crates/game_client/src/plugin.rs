@@ -10,7 +10,7 @@ use player::PlayerPlugin;
 use crate::arena::{load_arena_assets, spawn_arena};
 use crate::camera::{
     CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera, spawn_ground,
-    zoom_camera_input,
+    touch_camera_input, zoom_camera_input,
 };
 use crate::config::ClientConfig;
 use crate::connection::{LocalPlayerId, handle_welcome, retry_connect_when_disconnected};
@@ -79,6 +79,7 @@ impl Plugin for ClientPlugin {
                 gather_input,
                 rotate_camera_input,
                 zoom_camera_input,
+                touch_camera_input,
             ),
         );
         app.add_systems(
