@@ -19,6 +19,10 @@ use crate::decorations::spawn_decorations;
 use crate::hud::{reconnect_button, spawn_hud, update_hud_status, update_version_text};
 use crate::input::{InputState, gather_input};
 use crate::menu::{AppFlow, play_button, play_button_hover, spawn_menu};
+use crate::touch::{
+    TouchDetected, TouchJump, detect_touch, jump_button_input, spawn_touch_ui, touch_ui_visibility,
+    update_joystick_ui,
+};
 use crate::visuals::{
     animate_foxes, attach_player_visuals, load_fox_assets, mark_local_player_visuals,
     setup_fox_animators, sync_position_to_transform,
@@ -46,6 +50,8 @@ impl Plugin for ClientPlugin {
         app.init_resource::<CameraOrbit>();
         app.init_resource::<AppFlow>();
         app.init_resource::<DebugMode>();
+        app.init_resource::<TouchJump>();
+        app.init_resource::<TouchDetected>();
 
         app.add_systems(
             Startup,
@@ -58,6 +64,7 @@ impl Plugin for ClientPlugin {
                 load_fox_assets,
                 load_arena_assets,
                 spawn_arena,
+                spawn_touch_ui,
             )
                 .chain(),
         );
@@ -84,6 +91,15 @@ impl Plugin for ClientPlugin {
                 play_button,
                 play_button_hover,
                 toggle_debug_mode,
+            ),
+        );
+        app.add_systems(
+            Update,
+            (
+                detect_touch,
+                touch_ui_visibility,
+                jump_button_input,
+                update_joystick_ui,
             ),
         );
         app.add_systems(EguiPrimaryContextPass, inspector_ui);

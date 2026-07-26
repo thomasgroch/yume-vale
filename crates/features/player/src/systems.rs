@@ -1,11 +1,15 @@
 use bevy::prelude::*;
+#[cfg(feature = "server")]
 use bevy_tnua::builtins::TnuaBuiltinJump;
+#[cfg(feature = "server")]
 use bevy_tnua::prelude::*;
+#[cfg(feature = "server")]
 use game_core::constants::{RUN_SPEED, WALK_SPEED};
 use game_protocol::*;
 
 use crate::components::*;
 use crate::events::ActionStarted;
+#[cfg(feature = "server")]
 use crate::scheme::YumeScheme;
 
 /// Feeds the Tnua walk basis from the current `PlayerMovement` input state.
@@ -13,6 +17,7 @@ use crate::scheme::YumeScheme;
 /// `RUN_SPEED`, so walking is the walk/run ratio); `desired_forward` turns the
 /// character toward its movement direction. A held `jump` keeps the `Jump`
 /// action fed (Tnua handles ground/coyote checks).
+#[cfg(feature = "server")]
 pub fn feed_walk_basis(mut query: Query<(&PlayerMovement, &mut TnuaController<YumeScheme>)>) {
     for (movement, mut controller) in query.iter_mut() {
         controller.initiate_action_feeding();
@@ -43,7 +48,7 @@ pub fn process_actions(query: Query<(&Player, &ReplicatedPlayerInput)>, mut comm
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
     use game_core::math::Direction;

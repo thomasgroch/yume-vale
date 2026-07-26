@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use game_core::actions::ActionKind;
 use game_core::math::Direction;
 use game_protocol::ClientInput;
@@ -6,6 +7,7 @@ use game_protocol::channels::InputChannel;
 use lightyear::prelude::MessageSender;
 
 use crate::camera::CameraOrbit;
+use crate::touch::{TouchJump, movement_touch_id};
 
 #[derive(Resource, Default)]
 pub struct InputState {
@@ -72,9 +74,17 @@ pub fn swipe_direction(start: Vec2, current: Vec2, yaw: f32) -> Option<(Directio
     Some((dir, magnitude >= SWIPE_RUN_THRESHOLD))
 }
 
+/// Touch-side input sources bundled to keep `gather_input`'s arity low.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct TouchParams<'w, 's> {
+    touches: Res<'w, Touches>,
+    touch_jump: Res<'w, TouchJump>,
+    window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
+}
+
 pub fn gather_input(
     keys: Res<ButtonInput<KeyCode>>,
-    touches: Res<Touches>,
+    touch: TouchParams,
     orbit: Res<CameraOrbit>,
     flow: Res<crate::menu::AppFlow>,
     mut state: ResMut<InputState>,
@@ -85,9 +95,12 @@ pub fn gather_input(
     }
     let (movement, run, _action) = read_keyboard_input(&keys, orbit.yaw);
     let (movement, run) = if movement.is_zero() {
-        touches
-            .iter()
-            .next()
+        touch
+            .window
+            .single()
+            .ok()
+            .and_then(|w| movement_touch_id(&touch.touches, w))
+            .and_then(|id| touch.touches.get_pressed(id))
             .and_then(|t| swipe_direction(t.start_position(), t.position(), orbit.yaw))
             .unwrap_or((movement, run))
     } else {
@@ -100,7 +113,7 @@ pub fn gather_input(
         move_x: (movement.0.x * 127.0).round() as i8,
         move_z: (movement.0.z * 127.0).round() as i8,
         run,
-        jump: keys.pressed(KeyCode::Space),
+        jump: keys.pressed(KeyCode::Space) || touch.touch_jump.0,
     };
 
     if let Ok(mut sender) = senders.single_mut() {

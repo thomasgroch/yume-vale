@@ -8,6 +8,7 @@ pub mod hud;
 pub mod input;
 pub mod menu;
 pub mod plugin;
+pub mod touch;
 pub mod visuals;
 
 pub use camera::{CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera};

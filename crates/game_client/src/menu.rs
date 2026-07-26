@@ -222,6 +222,7 @@ mod tests {
         app.init_resource::<InputState>();
         app.init_resource::<ButtonInput<KeyCode>>();
         app.init_resource::<Touches>();
+        app.init_resource::<crate::touch::TouchJump>();
         app.init_resource::<crate::camera::CameraOrbit>();
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()

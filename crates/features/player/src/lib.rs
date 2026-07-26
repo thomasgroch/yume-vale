@@ -1,12 +1,14 @@
 pub mod components;
 pub mod events;
 pub mod plugin;
+#[cfg(feature = "server")]
 pub mod scheme;
 pub mod systems;
 
 pub use components::*;
 pub use events::*;
 pub use plugin::{PlayerMovementSet, PlayerPlugin};
+#[cfg(feature = "server")]
 pub use scheme::YumeScheme;
 pub use systems::*;
 
