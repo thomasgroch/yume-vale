@@ -1,6 +1,8 @@
 # 🌸 Yume Vale — Plano de Desenvolvimento
 
 > Aventura social multiplayer online em visão isométrica 3D. Sem combate — explorar, coletar, cuidar de criaturas, decorar e colaborar.
+>
+> **Estado (27/07/2026):** protótipo multiplayer funcional e no ar em https://yume.lab.thomasdev.xyz — movimento com física (Tnua+Avian3d), raposa animada, arena "Ruínas de Cristal", cross-play nativo/web/mobile, deploy GitOps (Docker → ghcr → k3s + Argo CD). As features abaixo (resources, creatures, housing, quests, social) são a **visão futura** — hoje o workspace é intencionalmente mínimo (ver `crates/`).
 
 ---
 
@@ -29,53 +31,53 @@
 | Assets | **Bevy AssetServer** | Carregamento, handles, hot reload |
 | Formato 3D | **glTF/GLB** | Modelos, materiais, animações |
 | Física | **Avian 3D 0.7.0** | Colisão, queries (leve — sem rigid bodies complexos) |
-| Multiplayer | **Lightyear 0.28.0** | Replicação, lobby, ações |
+| Multiplayer | **Lightyear 0.28.0** | Replicação, mensagens |
+| Transporte web | **aeronet_websocket / aeronet_webtransport 0.21** | Listeners WS/WT (testes in-memory via bevy_replicon) |
+| Movimento | **bevy-tnua 0.32 + bevy-tnua-avian3d 0.12** | Character controller (walk/jump) |
 | Serialização | **Serde 1.0.228** | Protocolo, saves, config |
 | Configuração | **RON 0.12.2** | Dados tipados próximos ao Rust |
-| CLI | **clap 4.6.1** | Ferramentas de build e validação |
 | Logs | **tracing 0.1.44** | Logs estruturados |
-| Erros | **thiserror 2.0.18 + anyhow 1.0.103** | Erros de domínio e contexto |
-| Integração física/rede | **lightyear_avian3d 0.28.0** | Sincronização Avian ↔ Lightyear |
+| Erros | **thiserror 2.0.18** | Erros de domínio |
 | Testes | **cargo test** | Systems e regras |
 | Lint/format | **Clippy + rustfmt** | Padronização |
 
-> Versões fixadas em `Cargo.lock`, atualizadas deliberadamente. Sem dependências duplicadas. Últimas versões estáveis verificadas em 15 de julho de 2026: Bevy 0.19.0, Avian 3D 0.7.0, Lightyear 0.28.0, Serde 1.0.228, RON 0.12.2, clap 4.6.1, tracing 0.1.44, thiserror 2.0.18, anyhow 1.0.103. `lightyear_avian3d` 0.28.0 cuida da integração física-rede.
+> Versões fixadas em `Cargo.lock`, atualizadas deliberadamente. Sem dependências duplicadas. Últimas versões estáveis verificadas em 15 de julho de 2026: Bevy 0.19.0, Avian 3D 0.7.0, Lightyear 0.28.0, Serde 1.0.228, RON 0.12.2, clap 4.6.1, tracing 0.1.44, thiserror 2.0.18, anyhow 1.0.103.
 
 ---
 
 ## 🏗️ Arquitetura
 
+### Árvore atual (protótipo)
+
 ```
 yume-vale/
 ├── Cargo.toml              # workspace
-├── Cargo.lock
-├── AGENTS.md
-├── README.md
+├── AGENTS.md / README.md
 ├── apps/
-│   ├── client/             # Bevy completo: render, áudio, UI, input
-│   ├── server/             # Bevy headless: simulação, persistência, rede
-│   └── tools/              # validação, importação, inspeção
+│   ├── client/             # Bevy completo + index.html/nginx.conf/dist (wasm)
+│   ├── server/             # Bevy headless: simulação, física, rede
+│   └── tools/              # geração do certificado dev (WebTransport)
 ├── crates/
-│   ├── game_core/          # regras independentes de plataforma
-│   ├── game_protocol/      # mensagens, canais, componentes replicados
-│   ├── game_assets/        # tipos, loaders, manifestos
-│   ├── game_client/        # apresentação, câmera, UI, efeitos
-│   ├── game_server/        # autoridade, sessões, persistência
+│   ├── game_core/          # regras independentes de plataforma (layouts determinísticos, constantes)
+│   ├── game_protocol/      # mensagens, canais, componentes replicados, paleta
+│   ├── game_client/        # conexão, input, câmera, visuais, menu, HUD, touch, debug
+│   ├── game_server/        # autoridade: listeners, spawn, input, física
 │   └── features/
-│       ├── player/         # movimento, inventário, estado do jogador
-│       ├── resources/      # coleta, plantas, minérios, madeira
-│       ├── creatures/      # criaturas que o jogador cuida
-│       ├── housing/        # terreno, construção, decoração
-│       ├── quests/         # tarefas dos habitantes, progressão
-│       └── social/         # chat, emotes, grupo, colaboração
-├── assets/
-│   ├── models/
-│   ├── textures/
-│   ├── audio/
-│   ├── scenes/
-│   └── config/
-├── tests/
-└── docs/
+│       └── player/         # movimento (Tnua), inventário, estado do jogador
+├── assets/                 # GLBs (raposa Meshy, arena), config
+├── deploy/                 # manifests k3s + Argo CD (ver docs/deploy.md)
+└── docs/                   # deploy, planejamento, screenshots
+```
+
+### Visão futura (features planejadas)
+
+```
+features/
+├── resources/      # coleta, plantas, minérios, madeira
+├── creatures/      # criaturas que o jogador cuida
+├── housing/        # terreno, construção, decoração
+├── quests/         # tarefas dos habitantes, progressão
+└── social/         # chat, emotes, grupo, colaboração
 ```
 
 Cada feature autocontida:
@@ -122,10 +124,10 @@ Update      → câmera, animação, UI, efeitos
 PostUpdate  → sincronização visual e render
 ```
 
-### Padrão inicial
+### Padrão atual
 
 - Tick simulação: 30 Hz (Yume Vale não exige 60 Hz — ações mais lentas)
-- Snapshots: 10–15 Hz
+- Snapshots: 30 Hz
 - Render: taxa disponível
 - Input: coletado por frame, consumido por tick
 
@@ -135,17 +137,18 @@ PostUpdate  → sincronização visual e render
 
 ### Modelo
 
-Servidor autoritário. Cliente transmite intenções (andar, interagir, coletar), nunca posição final ou criação de entidades.
+Servidor autoritário. Cliente transmite intenções (andar, correr, pular), nunca posição final ou criação de entidades.
 
+Implementado hoje:
+
+```rust
+ClientInput { tick, move_x: i8, move_z: i8, run: bool, jump: bool }  // escala i8: 127
+Welcome     { ... }                                                   // server → client
+PlayerPosition  // componente replicado com interpolação linear
+PlayerColor     // componente replicado (atribuído pelo servidor, round-robin)
 ```
-ClientInput {
-    tick,
-    movement,       // direção + correr
-    interact,       // qual entidade/alvo
-    action,         // coletar, plantar, decorar
-    chat_message,
-}
-```
+
+Futuro: `interact`, `action`, `chat_message`.
 
 ### Técnicas
 
@@ -155,17 +158,14 @@ ClientInput {
 - **Rate limiting:** ações por segundo
 - **Protocol versioning:** validação na conexão
 
-### Canais
+### Canais (implementado)
 
 ```
-Input / ações rápidas → unreliable sequenced
-Snapshots             → unreliable sequenced
-Spawn/despawn         → reliable ordered
-Lobby/chat            → reliable ordered
-Persistência          → reliable ordered
+ClientInput  → sequenced unreliable, 30 Hz, ClientToServer
+Confiável    → ordered reliable, bidirecional (Welcome, futuro spawn/chat)
 ```
 
-Yume Vale tem necessidades de rede mais leves que um jogo de ação — pode-se começar com prediction simplificado ou até sem prediction para o MVP, usando interpolação e reconciliação do servidor.
+**Replicação:** `PlayerPosition` (com interpolação linear) e `PlayerColor` usam a feature `replication` do Lightyear — posições fluem como componentes replicados, não como mensagens manuais. Movimento não usa client-side prediction: o cliente interpola as posições replicadas (fator 20.0), suficiente para o ritmo do jogo.
 
 ---
 
@@ -181,7 +181,7 @@ Yume Vale tem necessidades de rede mais leves que um jogo de ação — pode-se 
 | Shaders | `.wgsl` |
 | Fontes | `.ttf` / `.otf` |
 
-Assets com IDs estáveis e manifestos explícitos:
+Assets com IDs estáveis e manifestos explícitos (visão futura — hoje os assets são GLBs gerados via Meshy AI carregados direto pelo AssetServer: raposa rigada + animações em `assets/models/fox/`, arena em `assets/models/arena/`):
 
 ```ron
 (
@@ -211,15 +211,9 @@ Assets com IDs estáveis e manifestos explícitos:
 - Logs estruturados e erros acionáveis
 - Alterações arquiteturais atualizam docs e testes
 
-### CLI via xtask
+### Automação
 
-```bash
-cargo xtask check
-cargo xtask test
-cargo xtask validate-assets
-cargo xtask run-client
-cargo xtask run-server
-```
+Hoje: `./yume-vale.sh` (build/test/check/play/web/map/clean-build). `cargo xtask` fica como opção futura se o script crescer.
 
 ---
 
@@ -238,11 +232,9 @@ fn collecting_resource_adds_to_inventory() {
 
 ### Integração
 
-- Cliente e servidor em memória (transporte local por channels)
-- Spawn, replicação, ações coletivas
-- Reconexão e incompatibilidade de protocolo
-- Validação de assets e configs
-- Persistência de mundo
+Implementado em `crates/game_server/tests/integration.rs`: cliente e servidor em memória (transporte local via channels/bevy_replicon), spawn, dedup de reconexão, aplicação de input.
+
+Futuro: reconexão e incompatibilidade de protocolo, validação de assets e configs, persistência de mundo.
 
 ### Determinismo (desejável)
 
@@ -253,17 +245,15 @@ Seed + estado inicial + inputs → checksum esperado na simulação.
 ## 🔥 Desenvolvimento
 
 ```bash
-cargo run -p client
-cargo run -p server
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --all -- --check
+./yume-vale.sh play     # servidor + cliente nativos juntos
+./yume-vale.sh web      # servidor + cliente wasm em http://127.0.0.1:8080
+./yume-vale.sh test     # cargo test --workspace
+./yume-vale.sh check    # fmt + clippy (-D warnings) + testes
 ```
 
-- Hot reload de assets, cenas, shaders e configs (nativo do Bevy)
-- Features Cargo para `client`, `server`, `web`, `dev`
-- Servidor headless sem render/áudio/janela
-- Estado persistente serializável (não memória implícita)
+- Assets GLB/texturas carregados via AssetServer
+- Servidor headless sem render/áudio/janela (MinimalPlugins + ScheduleRunner 30 Hz)
+- Builds wasm somente via toolchain rustup dedicada (ver AGENTS.md)
 
 ---
 
@@ -275,55 +265,58 @@ cargo build --release -p client
 ```
 
 ### Web
-```bash
-cargo build --release --target wasm32-unknown-unknown -p client --features web
-```
 
-Processar `.wasm`, comprimir assets, publicar em Cloudflare Pages. Cliente web conecta ao servidor por WebTransport.
+Cliente wasm (trunk) servido como estático pelo nginx. Cliente web conecta ao servidor por **WebSocket** (produção) ou WebTransport (dev local, `?transport=ws` para fallback).
 
-#### ✅ Implementado (20/07/2026) — dev local com cross-play
+#### ✅ Implementado — dev local com cross-play
 
 O servidor roda **3 listeners no mesmo processo** (uma entidade servidora por transporte, todas com `NetcodeServer`):
 
 | Transporte | Porta | Clientes | TLS |
 |---|---|---|---|
 | UDP + Netcode | 5000 | nativos (Win/Linux/macOS) | netcode |
-| WebTransport (HTTP/3) | 5001 | browser (padrão) | self-signed dev, hash pinning |
-| WebSocket (`ws://`) | 5002 | browser (fallback via `?transport=ws`) | nenhum (localhost) |
+| WebTransport (HTTP/3) | 5001 | browser (dev local) | self-signed dev, hash pinning |
+| WebSocket (`ws://`) | 5002 | browser (produção + fallback) | Traefik/cert-manager em produção |
 
 - Pipeline: `trunk serve` a partir de `apps/client` (`./yume-vale.sh web` — gera cert se velho, sobe o servidor, serve em `http://127.0.0.1:8080`)
-- Certificado dev: `cargo run -p tools -- generate-cert` → `certs/{server.pem,key.pem,digest.txt}` (gitignored, validade 13 dias — limite do browser para hash pinning; o script regenera após 7)
+- Certificado dev: `./yume-vale.sh generate-cert` → `certs/{server.pem,key.pem,digest.txt}` (gitignored, validade 13 dias; o script regenera após 7)
 - O digest é embutido no wasm via `include_str!` (cert estável em disco → digest estável)
-- `client_id` no wasm via `getrandom` (SystemTime/PID não existem); rustflags wasm em `.cargo/config.toml` (`getrandom_backend="wasm_js"`, `web_sys_unstable_apis`) — target-specific, não afeta nativo
-- Toolchain wasm: rustup 1.96.0 (mesma versão do cargo Homebrew); o script injeta o PATH só nos comandos web
-- Verificado ao vivo: 2 browsers (WebTransport) + 1 cliente nativo (UDP) no mesmo servidor, cores consistentes
-- Reconexão resiliente: cliente retenta `Connect` a cada 2s enquanto desconectado; servidor despawna player obsoleto com o mesmo `PlayerId` antes de spawnar (sem duplicatas/fantasmas)
-- Cliente web: canvas ocupa a janela inteira (`fit_canvas_to_parent`); endereços por transporte em `ClientConfig`
+- Toolchain wasm: rustup 1.96.0; o script injeta o PATH só nos comandos web
+- Reconexão resiliente: cliente retenta `Connect` a cada 2s; servidor despawna player obsoleto com o mesmo `PlayerId` (sem duplicatas/fantasmas)
+- Mobile: touch auto-detectado (joystick + botão de pulo), texturas WebP, wasm release com `wasm-opt -Oz` (shim binaryen v131 no Dockerfile — ver comentários em `Dockerfile.client`)
 
-**Pendente para produção:** deploy Cloudflare Pages, TLS real (WebTransport exige; Caddy não faz proxy de datagramas QUIC — avaliar terminação TLS no próprio game server), fallback automático WT→WS.
+#### ✅ Implementado — produção (k3s + Argo CD)
+
+Live em https://yume.lab.thomasdev.xyz. Pipeline completo em [docs/deploy.md](docs/deploy.md):
+
+- Push em `main` → GitHub Actions builda `Dockerfile.{server,client}` → `ghcr.io/thomasgroch/yume-vale-{server,client}:sha-<commit>`
+- O workflow pin o sha nos manifests (`deploy/1*.yaml`/`2*.yaml`, commit `[skip ci]`) → Argo CD faz o rollout
+- Ingress Traefik: `/` → nginx (wasm estático), `/ws` → servidor WS:5002; UDP:5000 via Service LoadBalancer para clientes nativos
+- TLS automático via cert-manager (letsencrypt-prod); `YUME_SERVER_WS_URL` embutida no wasm no build Docker (vazio = deriva do host da página)
+
+**Pendente para produção:** WebTransport em produção (exige terminação QUIC no próprio game server — proxy de datagramas QUIC não é trivial), fallback automático WT→WS no cliente.
 
 ### Servidor
 ```bash
-cargo build --release -p server --no-default-features --features server
+cargo build --release -p server
 ```
 
 ---
 
-## 🚀 Infraestrutura
+## 🌍 Infraestrutura (atual)
 
 | Componente | Escolha |
 |---|---|
-| Cliente web | Cloudflare Pages |
-| Assets estáticos | Cloudflare CDN / R2 |
-| Game server | VPS Linux |
-| Processo | systemd ou container |
-| Proxy/TLS | Caddy |
-| Observabilidade | tracing + OpenTelemetry |
-| CI | GitHub Actions |
-| Persistência (MVP) | SQLite (via `game_server`) |
-| Persistência (escala) | PostgreSQL |
+| Cliente web | nginx servindo wasm estático (imagem Docker própria) |
+| Game server | Container Linux (imagem Docker própria) |
+| Registry | ghcr.io |
+| Cluster | k3s (namespace `yume-vale`) |
+| GitOps | Argo CD (`deploy/argocd-application.yaml`) |
+| Proxy/TLS | Traefik Ingress + cert-manager (Let's Encrypt) |
+| CI | GitHub Actions (`.github/workflows/images.yml`) |
+| Logs | tracing (stdout → logs do pod) |
 
-> Servidor não depende do banco durante cada tick. Persistência em eventos: login, coleta, construção, salvamento periódico do mundo.
+> Servidor autoritário single-replica (`strategy: Recreate`) — um mundo por processo. Persistência (SQLite → PostgreSQL) é visão futura, junto com as features de gameplay.
 
 ---
 
@@ -378,12 +371,13 @@ bevy = { workspace = true, features = ["3d", "ui"] }
 Engine:            Bevy 0.19
 Arquitetura:       ECS + plugins por feature
 Cliente/servidor:  Rust compartilhando game_core
-Multiplayer:       Lightyear (perfil leve — 30 Hz tick, sem prediction crítica)
+Multiplayer:       Lightyear (perfil leve — 30 Hz tick, replicação + interpolação, sem prediction)
 Autoridade:        servidor
 Configuração:      RON + Serde
-Plataformas:       desktop + web + mobile (nesta ordem)
-Persistência:      SQLite (MVP) → PostgreSQL
-Automação:         cargo xtask
+Plataformas:       desktop + web + mobile (todas funcionando)
+Deploy:            Docker → ghcr → k3s + Argo CD
+Persistência:      SQLite (MVP) → PostgreSQL  [futuro]
+Automação:         yume-vale.sh
 Princípio:         contexto mínimo e contratos explícitos
 ```
 
