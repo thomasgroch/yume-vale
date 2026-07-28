@@ -1,7 +1,8 @@
 use glam::Vec3;
+use serde::{Deserialize, Serialize};
 
 /// Kind of a scattered decoration prop (outside the arena ring).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DecorationKind {
     /// Tree: cylinder trunk + sphere canopy. Collider = trunk.
     Tree,
@@ -13,7 +14,7 @@ pub enum DecorationKind {
 
 /// A single scattered decoration, shared so the server can spawn matching
 /// physics colliders for the client's visuals.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DecorationProp {
     pub kind: DecorationKind,
     pub position: Vec3,

@@ -1,8 +1,15 @@
 use bevy::math::curve::{Curve, Ease, FunctionCurve, Interval};
 use bevy::prelude::{Component, Reflect, Srgba, Vec3};
+use game_core::decorations::DecorationKind;
 use game_core::player_state::PlayerInput;
+use game_core::resources::ResourceKind;
+use game_core::world_config::CreatureKind;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
+
+// ---------------------------------------------------------------------------
+// Player components (existing)
+// ---------------------------------------------------------------------------
 
 /// The authoritative position of a player, replicated from server to clients.
 /// Lightyear's interpolation system will smooth this component on clients.
@@ -56,9 +63,95 @@ pub fn palette_color(index: u8) -> Srgba {
     PLAYER_PALETTE[index as usize % PLAYER_PALETTE.len()]
 }
 
+// ---------------------------------------------------------------------------
+// Resource node state (replicated, with interpolation)
+// ---------------------------------------------------------------------------
+
+/// Replicated state of a resource node (tree, crystal, berry bush, etc.).
+/// Position uses named f32 primitives for reliable binary serialization.
+/// Intentionally no `Reflect` derive — game_core enum fields are Bevy-free.
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ResourceNodeState {
+    pub resource_id: u64,
+    pub kind: ResourceKind,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub depleted: bool,
+    pub respawn_progress: f32,
+}
+
+impl Ease for ResourceNodeState {
+    fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
+        FunctionCurve::new(Interval::EVERYWHERE, move |t| ResourceNodeState {
+            resource_id: end.resource_id,
+            kind: end.kind,
+            position_x: start.position_x + (end.position_x - start.position_x) * t,
+            position_y: start.position_y + (end.position_y - start.position_y) * t,
+            position_z: start.position_z + (end.position_z - start.position_z) * t,
+            depleted: end.depleted,
+            respawn_progress: start.respawn_progress
+                + (end.respawn_progress - start.respawn_progress) * t,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Creature state (replicated, with interpolation)
+// ---------------------------------------------------------------------------
+
+/// Replicated state of a wandering creature.
+/// Uses named f32 primitives for position fields.
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct CreatureState {
+    pub creature_id: u64,
+    pub kind: CreatureKind,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub target_x: f32,
+    pub target_z: f32,
+}
+
+impl Ease for CreatureState {
+    fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
+        FunctionCurve::new(Interval::EVERYWHERE, move |t| CreatureState {
+            creature_id: end.creature_id,
+            kind: end.kind,
+            position_x: start.position_x + (end.position_x - start.position_x) * t,
+            position_y: start.position_y + (end.position_y - start.position_y) * t,
+            position_z: start.position_z + (end.position_z - start.position_z) * t,
+            target_x: end.target_x,
+            target_z: end.target_z,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Decoration state (replicated, static — no interpolation)
+// ---------------------------------------------------------------------------
+
+/// Replicated state of a static decoration prop.
+/// These do not move, so no Ease impl is provided.
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DecorationState {
+    pub kind: DecorationKind,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub position_z: f32,
+    pub rotation: f32,
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::math::curve::Ease;
+
+    // --- PlayerPosition (existing) ---
 
     #[test]
     fn player_position_serde_roundtrip() {
@@ -77,6 +170,8 @@ mod tests {
         assert!((mid.unwrap().0.x - 5.0).abs() < 1e-5);
     }
 
+    // --- PlayerColor ---
+
     #[test]
     fn player_color_serde_roundtrip() {
         let orig = PlayerColor(7);
@@ -89,5 +184,148 @@ mod tests {
     fn palette_color_wraps_around() {
         assert_eq!(palette_color(0), palette_color(8));
         assert_ne!(palette_color(0), palette_color(1));
+    }
+
+    // --- ResourceNodeState ---
+
+    #[test]
+    fn resource_node_state_serde_roundtrip() {
+        let orig = ResourceNodeState {
+            resource_id: 1,
+            kind: ResourceKind::Wood,
+            position_x: 8.0,
+            position_y: 0.0,
+            position_z: 8.0,
+            depleted: false,
+            respawn_progress: 0.5,
+        };
+        let json = serde_json::to_string(&orig).unwrap();
+        let back: ResourceNodeState = serde_json::from_str(&json).unwrap();
+        assert_eq!(orig, back);
+    }
+
+    #[test]
+    fn resource_node_ease_lerp_position() {
+        let start = ResourceNodeState {
+            resource_id: 1,
+            kind: ResourceKind::Wood,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            depleted: false,
+            respawn_progress: 0.0,
+        };
+        let end = ResourceNodeState {
+            resource_id: 1,
+            kind: ResourceKind::Wood,
+            position_x: 10.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            depleted: false,
+            respawn_progress: 1.0,
+        };
+        let curve = ResourceNodeState::interpolating_curve_unbounded(start, end);
+        let mid = curve.sample(0.5).unwrap();
+        assert!((mid.position_x - 5.0).abs() < 1e-5);
+        assert!((mid.respawn_progress - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn resource_node_ease_snaps_depleted() {
+        let start = ResourceNodeState {
+            resource_id: 1,
+            kind: ResourceKind::Wood,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            depleted: true,
+            respawn_progress: 0.0,
+        };
+        let end = ResourceNodeState {
+            resource_id: 1,
+            kind: ResourceKind::Wood,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            depleted: false,
+            respawn_progress: 1.0,
+        };
+        let curve = ResourceNodeState::interpolating_curve_unbounded(start, end);
+        assert!(!curve.sample(0.0).unwrap().depleted);
+        assert!(!curve.sample(1.0).unwrap().depleted);
+    }
+
+    // --- CreatureState ---
+
+    #[test]
+    fn creature_state_serde_roundtrip() {
+        let orig = CreatureState {
+            creature_id: 1,
+            kind: CreatureKind::Fluffball,
+            position_x: 10.0,
+            position_y: 0.0,
+            position_z: 5.0,
+            target_x: 12.0,
+            target_z: 3.0,
+        };
+        let json = serde_json::to_string(&orig).unwrap();
+        let back: CreatureState = serde_json::from_str(&json).unwrap();
+        assert_eq!(orig, back);
+    }
+
+    #[test]
+    fn creature_state_ease_lerp() {
+        let start = CreatureState {
+            creature_id: 1,
+            kind: CreatureKind::Fluffball,
+            position_x: 0.0,
+            position_y: 0.0,
+            position_z: 0.0,
+            target_x: 5.0,
+            target_z: 5.0,
+        };
+        let end = CreatureState {
+            creature_id: 1,
+            kind: CreatureKind::Fluffball,
+            position_x: 10.0,
+            position_y: 0.0,
+            position_z: 10.0,
+            target_x: 15.0,
+            target_z: 15.0,
+        };
+        let curve = CreatureState::interpolating_curve_unbounded(start, end);
+        let mid = curve.sample(0.5).unwrap();
+        assert!((mid.position_x - 5.0).abs() < 1e-5);
+        assert!((mid.position_z - 5.0).abs() < 1e-5);
+    }
+
+    // --- DecorationState ---
+
+    #[test]
+    fn decoration_state_serde_roundtrip() {
+        let orig = DecorationState {
+            kind: DecorationKind::Tree,
+            position_x: -15.0,
+            position_y: 0.0,
+            position_z: 20.0,
+            rotation: 0.0,
+        };
+        let json = serde_json::to_string(&orig).unwrap();
+        let back: DecorationState = serde_json::from_str(&json).unwrap();
+        assert_eq!(orig, back);
+    }
+
+    #[test]
+    fn decoration_state_rock_kind_serde() {
+        let orig = DecorationState {
+            kind: DecorationKind::Rock(0.8),
+            position_x: 10.0,
+            position_y: 0.0,
+            position_z: -10.0,
+            rotation: 1.5,
+        };
+        let json = serde_json::to_string(&orig).unwrap();
+        let back: DecorationState = serde_json::from_str(&json).unwrap();
+        assert_eq!(orig, back);
     }
 }

@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use crate::menu::AppFlow;
+use crate::flow::AppFlow;
+use crate::ui::{theme, widgets};
 
 /// Fraction of the window (from the right / from the bottom) where the jump
 /// button lives; touches starting there must not drive movement.
@@ -28,21 +29,8 @@ pub struct JoystickRing;
 #[derive(Component)]
 pub struct JoystickKnob;
 
-/// Semi-transparent circle used for the jump button and joystick feedback.
-fn circle(size: f32, color: Color) -> (Node, BackgroundColor) {
-    (
-        Node {
-            width: Val::Px(size),
-            height: Val::Px(size),
-            border_radius: BorderRadius::all(Val::Px(999.0)),
-            ..default()
-        },
-        BackgroundColor(color),
-    )
-}
-
 pub fn spawn_touch_ui(mut commands: Commands) {
-    let (node, bg) = circle(72.0, Color::srgba(1.0, 1.0, 1.0, 0.18));
+    let (node, bg) = widgets::pill(theme::SPACE_72, theme::OVERLAY_JUMP);
     commands
         .spawn((
             TouchUi,
@@ -50,8 +38,8 @@ pub fn spawn_touch_ui(mut commands: Commands) {
             Button,
             Node {
                 position_type: PositionType::Absolute,
-                right: Val::Px(32.0),
-                bottom: Val::Px(32.0),
+                right: Val::Px(theme::SPACE_32),
+                bottom: Val::Px(theme::SPACE_32),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 ..node
@@ -62,15 +50,12 @@ pub fn spawn_touch_ui(mut commands: Commands) {
         .with_children(|button| {
             button.spawn((
                 Text::new("Pular"),
-                TextFont {
-                    font_size: FontSize::Px(16.0),
-                    ..default()
-                },
-                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
+                widgets::text_font(theme::FONT_MD),
+                TextColor(theme::OVERLAY_JUMP_TEXT),
             ));
         });
 
-    let (ring_node, ring_bg) = circle(JOYSTICK_RING_SIZE, Color::srgba(1.0, 1.0, 1.0, 0.10));
+    let (ring_node, ring_bg) = widgets::pill(JOYSTICK_RING_SIZE, theme::OVERLAY_RING);
     commands.spawn((
         TouchUi,
         JoystickRing,
@@ -81,7 +66,7 @@ pub fn spawn_touch_ui(mut commands: Commands) {
         ring_bg,
         Visibility::Hidden,
     ));
-    let (knob_node, knob_bg) = circle(JOYSTICK_KNOB_SIZE, Color::srgba(1.0, 1.0, 1.0, 0.25));
+    let (knob_node, knob_bg) = widgets::pill(JOYSTICK_KNOB_SIZE, theme::OVERLAY_KNOB);
     commands.spawn((
         TouchUi,
         JoystickKnob,
@@ -105,10 +90,10 @@ pub fn detect_touch(touches: Res<Touches>, mut detected: ResMut<TouchDetected>) 
 /// The jump button appears only on touch devices, during gameplay.
 pub fn touch_ui_visibility(
     detected: Res<TouchDetected>,
-    flow: Res<AppFlow>,
+    flow: Res<State<AppFlow>>,
     mut jump_ui: Query<&mut Visibility, With<JumpButton>>,
 ) {
-    let visible = if detected.0 && *flow == AppFlow::Playing {
+    let visible = if detected.0 && flow.get() == &AppFlow::InGame {
         Visibility::Inherited
     } else {
         Visibility::Hidden
@@ -151,7 +136,7 @@ pub fn movement_touch_id(touches: &Touches, window: &Window) -> Option<u64> {
 pub fn update_joystick_ui(
     touches: Res<Touches>,
     detected: Res<TouchDetected>,
-    flow: Res<AppFlow>,
+    flow: Res<State<AppFlow>>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut joystick: ParamSet<(
         Query<(&mut Node, &mut Visibility), With<JoystickRing>>,
@@ -161,7 +146,7 @@ pub fn update_joystick_ui(
     let Ok(window) = window.single() else {
         return;
     };
-    let active = detected.0 && *flow == AppFlow::Playing;
+    let active = detected.0 && flow.get() == &AppFlow::InGame;
     let touch = active
         .then(|| movement_touch_id(&touches, window))
         .flatten()

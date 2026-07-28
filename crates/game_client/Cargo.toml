@@ -11,13 +11,15 @@ bevy-inspector-egui = "0.37"
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }
+serde_json = { workspace = true }
+dirs = "6"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 lightyear = { workspace = true, features = ["client", "udp", "netcode", "std", "replication", "interpolation"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lightyear = { workspace = true, features = ["client", "netcode", "replication", "interpolation", "std", "webtransport", "websocket"] }
-web-sys = { version = "0.3", features = ["Window", "Location"] }
+web-sys = { version = "0.3", features = ["Window", "Location", "Storage"] }
 js-sys = "0.3"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 aeronet_websocket.workspace = true

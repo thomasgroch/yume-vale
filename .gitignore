@@ -21,3 +21,6 @@ apps/client/dist/
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Local SQLite database (default path for game_persistence)
+/data/

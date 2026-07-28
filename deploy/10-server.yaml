@@ -1,6 +1,8 @@
 # Yume Vale authoritative game server (Bevy + Lightyear).
-# One process, 3 listeners: UDP:5000 (native), WT:5001 (dev-only, not exposed),
+# One process, 4 listeners: UDP:5000 (native), WT:5001 (WebTransport browser),
 # WS:5002 (browser fallback — exposed via Ingress /ws path).
+#
+# Argo CD sync wave: 2 (after postgres + TLS at wave 1)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,6 +10,8 @@ metadata:
   namespace: yume-vale
   labels:
     app: yume-server
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: 1
   strategy:
@@ -28,9 +32,28 @@ spec:
             - name: netcode-udp
               containerPort: 5000
               protocol: UDP
+            - name: webtransport
+              containerPort: 5001
+              protocol: UDP
             - name: websocket
               containerPort: 5002
               protocol: TCP
+          env:
+            # TLS certificate paths — the yume-tls Secret is mounted below
+            - name: YUME_TLS_CERT
+              value: /etc/yume-tls/tls.crt
+            - name: YUME_TLS_KEY
+              value: /etc/yume-tls/tls.key
+            # PostgreSQL connection string (from SealedSecret)
+            - name: YUME_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: yume-db
+                  key: url
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/yume-tls
+              readOnly: true
           resources:
             requests:
               cpu: 500m
@@ -48,6 +71,15 @@ spec:
               port: websocket
             initialDelaySeconds: 15
             periodSeconds: 20
+      volumes:
+        - name: tls
+          secret:
+            secretName: yume-tls
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
 ---
 # ClusterIP: WebSocket (5002) reached by Traefik through the Ingress /ws route.
 apiVersion: v1
@@ -68,7 +100,7 @@ spec:
       protocol: TCP
 ---
 # LoadBalancer (k3s ServiceLB): native clients connect straight to UDP 5000
-# on the node's public IP.
+# on the node's public IP; browser WebTransport clients use UDP 5001.
 apiVersion: v1
 kind: Service
 metadata:
@@ -76,6 +108,8 @@ metadata:
   namespace: yume-vale
   labels:
     app: yume-server
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   type: LoadBalancer
   selector:
@@ -84,4 +118,8 @@ spec:
     - name: netcode-udp
       port: 5000
       targetPort: netcode-udp
+      protocol: UDP
+    - name: webtransport
+      port: 5001
+      targetPort: webtransport
       protocol: UDP

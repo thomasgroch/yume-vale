@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn protocol_id_is_fixed() {
-        assert_eq!(PROTOCOL_ID, 0x59c3_7a6e);
+        assert_eq!(PROTOCOL_ID, 0x59c3_7a6f);
     }
 
     #[test]

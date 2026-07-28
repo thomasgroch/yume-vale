@@ -1,9 +1,13 @@
 pub mod actions;
 pub mod arena;
+pub mod checksum;
 pub mod constants;
 pub mod decorations;
+pub mod game_state;
+pub mod housing_layout;
 pub mod id;
 pub mod inventory;
 pub mod math;
 pub mod player_state;
 pub mod resources;
+pub mod world_config;

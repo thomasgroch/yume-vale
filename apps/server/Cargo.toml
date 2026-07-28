@@ -12,5 +12,4 @@ path = "src/main.rs"
 [dependencies]
 game_server = { workspace = true }
 bevy = { workspace = true, features = ["3d"] }
-tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

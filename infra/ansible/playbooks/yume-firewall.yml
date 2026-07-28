@@ -1,0 +1,12 @@
+---
+- name: Configure host firewall for Yume Vale
+  hosts: all
+  become: true
+  tasks:
+    - name: Allow inbound UDP 5001 (WebTransport)
+      community.general.ufw:
+        rule: allow
+        port: "5001"
+        proto: udp
+        direction: in
+        comment: WebTransport game traffic

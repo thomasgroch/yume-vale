@@ -6,6 +6,7 @@ use game_core::constants::RUN_SPEED;
 use game_core::decorations::{DecorationKind, decoration_layout};
 use lightyear::prelude::*;
 use player::scheme::YumeSchemeConfig;
+// WorldConfigResource is defined below in this module
 
 use super::connection::ServerConfigResource;
 
@@ -34,11 +35,37 @@ impl FromWorld for WalkConfig {
     }
 }
 
+/// Wraps a `WorldConfig` as a Bevy resource.
+#[derive(Resource, Clone)]
+pub struct WorldConfigResource(pub game_core::world_config::WorldConfig);
+
 /// Spawns the static physics world: infinite ground plane at y=0, arena prop
 /// colliders from `arena_layout()`, and decoration colliders from
 /// `decoration_layout()` (tree trunks and boulders; flowers are visual-only).
-pub fn setup_world(mut commands: Commands) {
+/// Also spawns creatures from the world config.
+pub fn setup_world(
+    mut commands: Commands,
+    world_config: Option<Res<WorldConfigResource>>,
+    creature_query: Query<Entity, Added<creatures::Creature>>,
+) {
     commands.spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
+
+    // Spawn creatures from world config
+    if let Some(config) = world_config {
+        creatures::spawn_creatures(&mut commands, &config.0);
+    }
+
+    // Add physics components to creatures spawned above.
+    // The query won't see them until next frame, but that's fine — the
+    // creatures plugin adds its own velocity system, and we add colliders
+    // here so that Avian sees them before the first physics tick.
+    for entity in &creature_query {
+        commands.entity(entity).insert((
+            RigidBody::Dynamic,
+            Collider::sphere(0.5),
+            LockedAxes::ROTATION_LOCKED,
+        ));
+    }
 
     for prop in arena_layout() {
         let rot = Quat::from_rotation_y(prop.yaw);
@@ -83,41 +110,12 @@ pub fn setup_world(mut commands: Commands) {
     }
 }
 
-/// Try to load WebTransport Identity from PEM files synchronously.
-/// Falls back to `None` if files are missing or malformed.
-fn load_wt_identity(
-    cert_path: &str,
-    key_path: &str,
-) -> Option<lightyear::webtransport::prelude::Identity> {
-    use aeronet_webtransport::wtransport::tls::*;
-    use std::fs;
-    use std::io::Cursor;
-
-    let cert_data = fs::read(cert_path).ok()?;
-    let key_data = fs::read(key_path).ok()?;
-
-    let cert_der_vec = rustls_pemfile::certs(&mut Cursor::new(&cert_data))
-        .next()?
-        .ok()?;
-    let certificate = Certificate::from_der(cert_der_vec.to_vec()).ok()?;
-
-    let key_result = rustls_pemfile::private_key(&mut Cursor::new(&key_data));
-    let key_der = match key_result {
-        Ok(Some(k)) => k,
-        _ => return None,
-    };
-
-    // rcgen generates PKCS#8 keys, so from_der_pkcs8 is correct here
-    let private_key = PrivateKey::from_der_pkcs8(key_der.secret_der().to_vec());
-
-    Some(Identity::new(
-        CertificateChain::new(vec![certificate]),
-        private_key,
-    ))
-}
-
 /// Spawns the Lightyear server entities (UDP, WebTransport, WebSocket) and starts them.
-pub fn setup_server(mut commands: Commands, server_config: Res<ServerConfigResource>) {
+pub fn setup_server(
+    mut commands: Commands,
+    server_config: Res<ServerConfigResource>,
+    tls_identity: Option<Res<super::tls::TlsIdentity>>,
+) {
     use lightyear::prelude::server::*;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
@@ -142,13 +140,21 @@ pub fn setup_server(mut commands: Commands, server_config: Res<ServerConfigResou
     commands.entity(udp_entity).trigger(|e| Start { entity: e });
 
     // WebTransport listener (browser clients)
-    let wt_identity = load_wt_identity("certs/server.pem", "certs/key.pem").unwrap_or_else(|| {
-        tracing::warn!(
-            "failed to load WT certs, generating self-signed (client hash pinning will not work)"
-        );
-        lightyear::webtransport::prelude::Identity::self_signed(["localhost", "127.0.0.1", "::1"])
+    let wt_identity = match &tls_identity {
+        Some(id) => id.identity.clone_identity(),
+        None => {
+            tracing::warn!(
+                "no TLS identity resource — generating self-signed \
+                 (client hash pinning will not work)"
+            );
+            lightyear::webtransport::prelude::Identity::self_signed([
+                "localhost",
+                "127.0.0.1",
+                "::1",
+            ])
             .expect("self-signed WT identity")
-    });
+        }
+    };
     let wt_entity = commands
         .spawn((
             NetcodeServer::new(config.clone()),

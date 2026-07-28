@@ -15,7 +15,7 @@ pub struct ArenaAssets {
     /// The large crystal model handle.
     crystal_big: Handle<WorldAsset>,
     /// The small crystal model handle.
-    crystal_small: Handle<WorldAsset>,
+    pub crystal_small: Handle<WorldAsset>,
     /// The rock model handle.
     rock: Handle<WorldAsset>,
 }

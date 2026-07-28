@@ -1,0 +1,108 @@
+# PostgreSQL StatefulSet for game persistence.
+#
+# ⚠  NO BACKUP — This is a single-node database without replication or backup.
+# The PVC contains all player data (identities, inventories, quest progress,
+# creature bonds, plot assignments, decorations).  Losing the PVC means losing
+# ALL save data.  See docs/deploy.md#database for details.
+#
+# Argo CD sync wave: 1 (before the server at wave 2)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: yume-postgres
+  namespace: yume-vale
+  labels:
+    app: yume-postgres
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  serviceName: yume-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yume-postgres
+  template:
+    metadata:
+      labels:
+        app: yume-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: yumevale
+            - name: POSTGRES_USER
+              value: yumevale
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: yume-db
+                  key: password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - yumevale
+                - -d
+                - yumevale
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - yumevale
+                - -d
+                - yumevale
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Internal ClusterIP so the server can reach postgres via DNS.
+# Not exposed externally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: yume-postgres
+  namespace: yume-vale
+  labels:
+    app: yume-postgres
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  type: ClusterIP
+  selector:
+    app: yume-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP

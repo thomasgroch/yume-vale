@@ -10,7 +10,13 @@ bevy = { workspace = true, features = ["3d", "bevy_state"] }
 lightyear = { workspace = true, features = ["server", "client", "udp", "netcode", "crossbeam", "raw_connection", "replication", "interpolation", "webtransport", "webtransport_self_signed", "websocket"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
+game_persistence = { workspace = true }
 player = { workspace = true, features = ["server"] }
+resources = { workspace = true }
+creatures = { workspace = true }
+social = { workspace = true }
+housing = { workspace = true }
+quests = { workspace = true }
 tracing = { workspace = true }
 aeronet_websocket.workspace = true
 aeronet_webtransport.workspace = true
@@ -18,8 +24,10 @@ rustls-pemfile.workspace = true
 avian3d.workspace = true
 bevy-tnua.workspace = true
 bevy-tnua-avian3d.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
 bevy_replicon.workspace = true
-game_client = { workspace = true }
+tempfile = "3"
+tracing-subscriber = "0.3"

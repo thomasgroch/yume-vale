@@ -5,10 +5,17 @@ members = [
     "crates/game_protocol",
     "crates/game_client",
     "crates/game_server",
+    "crates/game_persistence",
     "crates/features/player",
+    "crates/features/housing",
+    "crates/features/social",
+    "crates/features/resources",
+    "crates/features/creatures",
+    "crates/features/quests",
     "apps/client",
     "apps/server",
     "apps/tools",
+    "apps/xtask",
 ]
 
 [workspace.package]
@@ -33,12 +40,20 @@ avian3d = { version = "0.7", default-features = false }
 bevy-tnua = "0.32"
 bevy-tnua-avian3d = "0.12"
 serde_json = "1"
+ron = "0.8"
+sha2 = "0.10"
 
 game_core = { path = "crates/game_core" }
 game_protocol = { path = "crates/game_protocol" }
 game_client = { path = "crates/game_client" }
 game_server = { path = "crates/game_server" }
+game_persistence = { path = "crates/game_persistence" }
 player = { path = "crates/features/player" }
+housing = { path = "crates/features/housing" }
+social = { path = "crates/features/social" }
+resources = { path = "crates/features/resources" }
+creatures = { path = "crates/features/creatures" }
+quests = { path = "crates/features/quests" }
 
 [profile.dev]
 opt-level = 1

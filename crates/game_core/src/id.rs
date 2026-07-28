@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 macro_rules! define_id {
     ($vis:vis struct $name:ident(pub u64);) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
         $vis struct $name(pub u64);
 
         impl $name {
@@ -57,6 +57,9 @@ define_id!(
 );
 define_id!(
     pub struct ItemId(pub u64);
+);
+define_id!(
+    pub struct QuestId(pub u64);
 );
 
 #[cfg(test)]

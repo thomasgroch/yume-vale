@@ -1,0 +1,40 @@
+# cert-manager Certificate for yume.lab.thomasdev.xyz.
+#
+# This replaces the ingress-shim annotation (removed from 30-ingress.yaml) so
+# we have explicit control over key algorithm (RSA PKCS#8), renewal, and the
+# output Secret name.  The Secret "yume-tls" must be kept in sync with what
+# the Ingress resources reference (30-ingress.yaml).
+#
+# The server Deployment (10-server.yaml) mounts this Secret as a volume at
+# /etc/yume-tls/ and sets YUME_TLS_CERT / YUME_TLS_KEY env vars so the
+# WebTransport listener uses the production certificate.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: yume-tls
+  namespace: yume-vale
+spec:
+  # DNS name to secure
+  commonName: yume.lab.thomasdev.xyz
+  dnsNames:
+    - yume.lab.thomasdev.xyz
+
+  # Same issuer as the ingress-shim annotation used
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+
+  # Output Secret — name matches what 30-ingress.yaml references
+  secretName: yume-tls
+
+  # RSA PKCS#8: required by rustls/webtransport for the server listener.
+  # The server's load_tls_identity rejects PKCS#1 keys with
+  # TlsError::UnsupportedKeyFormat.
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS8
+    size: 2048
+    rotationPolicy: Always
+
+  # Renew 30 days before expiry (Let's Encrypt 90-day certificates)
+  renewBefore: 720h

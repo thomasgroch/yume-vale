@@ -1,0 +1,4 @@
+all:
+  hosts:
+    lab.thomasdev.xyz:
+      ansible_user: tg

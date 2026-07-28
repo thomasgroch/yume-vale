@@ -1,14 +1,9 @@
 use bevy::prelude::*;
 
 use crate::config::ClientConfig;
-use crate::connection::start_connection;
-
-#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AppFlow {
-    #[default]
-    Menu,
-    Playing,
-}
+use crate::connection::{TransportState, start_connection};
+use crate::flow::AppFlow;
+use crate::ui::{theme, widgets};
 
 #[derive(Component)]
 pub struct MenuRoot;
@@ -16,28 +11,7 @@ pub struct MenuRoot;
 #[derive(Component)]
 pub struct PlayButton;
 
-const MENU_BG: Color = Color::srgb(1.0, 0.90, 0.94);
-const TITLE: Color = Color::srgb(0.88, 0.42, 0.58);
-const SUBTLE: Color = Color::srgb(0.43, 0.50, 0.58);
-const BUTTON: Color = Color::srgb(1.0, 0.56, 0.67);
-const BUTTON_HOVER: Color = Color::srgb(1.0, 0.48, 0.60);
-
 pub fn spawn_menu(mut commands: Commands) {
-    let bubble = |size: f32, top: f32, left: f32, color: Color| {
-        (
-            Node {
-                position_type: PositionType::Absolute,
-                width: Val::Px(size),
-                height: Val::Px(size),
-                top: Val::Px(top),
-                left: Val::Px(left),
-                border_radius: BorderRadius::MAX,
-                ..default()
-            },
-            BackgroundColor(color),
-        )
-    };
-
     commands
         .spawn((
             MenuRoot,
@@ -49,46 +23,21 @@ pub fn spawn_menu(mut commands: Commands) {
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
-            BackgroundColor(MENU_BG),
+            BackgroundColor(theme::SURFACE_MENU),
         ))
         .with_children(|root| {
-            root.spawn(bubble(
-                180.0,
-                60.0,
-                100.0,
-                Color::srgba(1.0, 0.78, 0.85, 0.5),
-            ));
-            root.spawn(bubble(
-                120.0,
-                420.0,
-                900.0,
-                Color::srgba(0.78, 0.90, 1.0, 0.5),
-            ));
-            root.spawn(bubble(
-                90.0,
-                130.0,
-                950.0,
-                Color::srgba(0.80, 0.96, 0.85, 0.5),
-            ));
+            root.spawn(widgets::bubble(180.0, 60.0, 100.0, theme::BUBBLE_PINK));
+            root.spawn(widgets::bubble(120.0, 420.0, 900.0, theme::BUBBLE_BLUE));
+            root.spawn(widgets::bubble(90.0, 130.0, 950.0, theme::BUBBLE_GREEN));
 
-            root.spawn((
-                Text::new("Yume Vale"),
-                TextFont {
-                    font_size: FontSize::Px(80.0),
-                    ..default()
-                },
-                TextColor(TITLE),
-                TextShadow::default(),
-            ));
+            root.spawn(widgets::text_style(theme::FONT_TITLE, theme::TEXT_TITLE))
+                .insert(Text::new("Yume Vale"));
             root.spawn((
                 Text::new("um vale fofo para passear com amigos"),
-                TextFont {
-                    font_size: FontSize::Px(20.0),
-                    ..default()
-                },
-                TextColor(SUBTLE),
+                widgets::text_font(theme::FONT_LG),
+                TextColor(theme::TEXT_SUBTLE),
                 Node {
-                    margin: UiRect::top(Val::Px(8.0)),
+                    margin: UiRect::top(Val::Px(theme::SPACE_8)),
                     ..default()
                 },
             ));
@@ -96,33 +45,25 @@ pub fn spawn_menu(mut commands: Commands) {
                 PlayButton,
                 Button,
                 Node {
-                    margin: UiRect::top(Val::Px(48.0)),
-                    padding: UiRect::axes(Val::Px(64.0), Val::Px(16.0)),
-                    border_radius: BorderRadius::all(Val::Px(999.0)),
-                    ..default()
+                    margin: UiRect::top(Val::Px(theme::SPACE_48)),
+                    ..widgets::button_frame(theme::SPACE_64, theme::SPACE_16)
                 },
-                BackgroundColor(BUTTON),
+                BackgroundColor(theme::BUTTON_PRIMARY),
             ))
             .with_children(|button| {
                 button.spawn((
                     Text::new("Jogar"),
-                    TextFont {
-                        font_size: FontSize::Px(28.0),
-                        ..default()
-                    },
+                    widgets::text_font(theme::FONT_XL),
                     TextColor(Color::WHITE),
                 ));
             });
             root.spawn((
                 Text::new("WASD ou setas: mover  |  Shift: correr  |  Q/E: girar a câmera  |  Espaço: pular"),
-                TextFont {
-                    font_size: FontSize::Px(14.0),
-                    ..default()
-                },
-                TextColor(SUBTLE),
+                widgets::text_font(theme::FONT_SM),
+                TextColor(theme::TEXT_SUBTLE),
                 Node {
                     position_type: PositionType::Absolute,
-                    bottom: Val::Px(24.0),
+                    bottom: Val::Px(theme::SPACE_24),
                     justify_self: JustifySelf::Center,
                     ..default()
                 },
@@ -130,22 +71,29 @@ pub fn spawn_menu(mut commands: Commands) {
         });
 }
 
-pub fn play_button(
+pub(crate) fn play_button(
     mut interactions: Query<&Interaction, (Changed<Interaction>, With<PlayButton>)>,
     mut commands: Commands,
     config: Res<ClientConfig>,
-    mut flow: ResMut<AppFlow>,
+    mut transport: ResMut<TransportState>,
+    time: Res<Time>,
+    mut next_state: ResMut<NextState<AppFlow>>,
     menus: Query<Entity, With<MenuRoot>>,
 ) {
     for interaction in &mut interactions {
         if *interaction != Interaction::Pressed {
             continue;
         }
-        *flow = AppFlow::Playing;
+        next_state.set(AppFlow::InGame);
         for entity in &menus {
             commands.entity(entity).despawn();
         }
-        start_connection(&mut commands, &config);
+        start_connection(
+            &mut commands,
+            &config,
+            &mut transport,
+            time.elapsed_secs_f64(),
+        );
     }
 }
 
@@ -158,10 +106,7 @@ type PlayButtonHover<'w, 's> = Query<
 
 pub fn play_button_hover(mut buttons: PlayButtonHover) {
     for (interaction, mut color) in &mut buttons {
-        *color = match interaction {
-            Interaction::Pressed | Interaction::Hovered => BUTTON_HOVER.into(),
-            Interaction::None => BUTTON.into(),
-        };
+        *color = theme::button_interaction_color(interaction).into();
     }
 }
 
@@ -174,8 +119,11 @@ mod tests {
 
     fn menu_app() -> App {
         let mut app = App::new();
-        app.init_resource::<AppFlow>();
+        app.add_plugins(bevy::state::app::StatesPlugin);
+        app.init_state::<AppFlow>();
         app.insert_resource(build_client_config("127.0.0.1:5000", "player"));
+        app.init_resource::<Time>();
+        app.insert_resource(TransportState::detect());
         app.add_systems(Startup, spawn_menu);
         app.add_systems(Update, play_button);
         app
@@ -194,15 +142,24 @@ mod tests {
     #[test]
     fn play_starts_game_and_connection() {
         let mut app = menu_app();
-        app.update();
+        // Start in Menu state so play_button processes presses.
+        app.world_mut()
+            .resource_mut::<NextState<AppFlow>>()
+            .set(AppFlow::Menu);
+        app.update(); // apply Menu state (OnEnter systems)
+        app.update(); // actually get into Menu via StateTransition
         let mut buttons = app.world_mut().query_filtered::<Entity, With<PlayButton>>();
         let button = buttons.single(app.world()).unwrap();
         app.world_mut()
             .entity_mut(button)
             .insert(Interaction::Pressed);
-        app.update();
+        app.update(); // play_button runs, sets NextState(InGame), spawns client
+        app.update(); // StateTransition to InGame
 
-        assert_eq!(*app.world().resource::<AppFlow>(), AppFlow::Playing);
+        assert_eq!(
+            app.world().resource::<State<AppFlow>>().get(),
+            &AppFlow::InGame
+        );
         let mut menus = app.world_mut().query_filtered::<Entity, With<MenuRoot>>();
         assert_eq!(menus.iter(app.world()).count(), 0, "menu should be gone");
         let mut clients = app.world_mut().query_filtered::<Entity, With<Client>>();
@@ -216,10 +173,19 @@ mod tests {
     #[test]
     fn menu_input_gate_blocks_gather() {
         use crate::input::{InputState, gather_input};
+        use crate::prediction::InputHistory;
 
         let mut app = App::new();
-        app.init_resource::<AppFlow>();
+        app.add_plugins(bevy::state::app::StatesPlugin);
+        app.init_state::<AppFlow>();
+        // Start in Menu state (input should be blocked there).
+        app.world_mut()
+            .resource_mut::<NextState<AppFlow>>()
+            .set(AppFlow::Menu);
+        app.update(); // start state transition
+        app.update(); // actually enter Menu
         app.init_resource::<InputState>();
+        app.init_resource::<InputHistory>();
         app.init_resource::<ButtonInput<KeyCode>>();
         app.init_resource::<Touches>();
         app.init_resource::<crate::touch::TouchJump>();

@@ -1,9 +1,19 @@
+pub mod auth;
+pub mod collect;
 pub mod connection;
 pub mod input;
+pub mod persistence;
 pub mod setup;
 pub mod snapshot;
+pub mod tls;
+pub mod visibility;
 
+pub use auth::*;
+pub use collect::*;
 pub use connection::*;
 pub use input::*;
+pub use persistence::*;
 pub use setup::*;
 pub use snapshot::*;
+pub use tls::*;
+pub use visibility::*;

@@ -9,8 +9,78 @@ permissions:
   contents: read
   packages: write
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
 jobs:
+  # ---------------------------------------------------------------------------
+  # Check: format, lint, unit tests + persistence contract tests against SQLite
+  # and PostgreSQL (when service is available).
+  # ---------------------------------------------------------------------------
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: yumevale_test
+          POSTGRES_USER: yumevale
+          POSTGRES_PASSWORD: ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Cache cargo for faster restore on repeated runs
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run tests (SQLite default)
+        run: cargo test --workspace
+
+      - name: Run persistence contract tests against PostgreSQL
+        run: cargo test -p game_persistence -- --test-threads=1
+        env:
+          YUME_TEST_DATABASE_URL: postgres://yumevale:ci-test-password@localhost:5432/yumevale_test
+
+  # ---------------------------------------------------------------------------
+  # Wasm client build (separate job — uses pinned toolchain)
+  # ---------------------------------------------------------------------------
+  wasm:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache wasm build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build wasm client
+        run: cargo build --package game_client --target wasm32-unknown-unknown
+
+  # ---------------------------------------------------------------------------
+  # Container images (server + client)
+  # ---------------------------------------------------------------------------
   build:
+    needs: check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

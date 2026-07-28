@@ -7,8 +7,8 @@ kind: Ingress
 metadata:
   name: yume-web
   namespace: yume-vale
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+  # Note: no cert-manager annotation — the Certificate resource at
+  # deploy/40-tls-certificate.yaml manages the yume-tls Secret explicitly.
 spec:
   ingressClassName: traefik
   rules:

@@ -1,0 +1,29 @@
+[package]
+name = "game_persistence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# SQLx with Any driver for portable SQLite/PostgreSQL support.
+# No compile-time macros — all queries are runtime strings with $N binds.
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+    "postgres",
+    "any",
+] }
+# SHA-256 hashing for identity tokens (raw token never stored).
+sha2 = { workspace = true }
+# Dedicated Tokio runtime on the worker thread (NOT Bevy's executor).
+tokio = { version = "1", features = ["rt", "sync"] }
+
+[dev-dependencies]
+tempfile = "3"
