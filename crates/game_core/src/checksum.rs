@@ -1,5 +1,5 @@
-use crate::game_state::{GameState, GroupId, PlotId};
-use crate::id::{CreatureId, PlayerId, QuestId};
+use crate::game_state::{GameState, PlotId};
+use crate::id::{CreatureId, PlayerId};
 use crate::inventory::ItemKind;
 use crate::resources::ResourceKind;
 
@@ -76,20 +76,6 @@ pub fn checksum_bytes(state: &GameState) -> Vec<u8> {
         }
     }
 
-    // Quest progress (sorted by player, then quest)
-    let mut qp: Vec<&(PlayerId, QuestId, crate::game_state::QuestProgress)> =
-        state.quest_progress.iter().collect();
-    qp.sort_by_key(|(p, q, _)| (p.0, q.0));
-    buf.extend_from_slice(&(qp.len() as u64).to_le_bytes());
-    for (player, quest, progress) in &qp {
-        buf.extend_from_slice(&player.0.to_le_bytes());
-        buf.extend_from_slice(&quest.0.to_le_bytes());
-        buf.push(progress.completed as u8);
-        for val in &progress.objective_progress {
-            buf.extend_from_slice(&val.to_le_bytes());
-        }
-    }
-
     // Creature bonds (sorted by player, then creature)
     let mut bonds: Vec<&(PlayerId, CreatureId, u32)> = state.creature_bonds.iter().collect();
     bonds.sort_by_key(|(p, c, _)| (p.0, c.0));
@@ -116,24 +102,6 @@ pub fn checksum_bytes(state: &GameState) -> Vec<u8> {
                 write_item_kind(&mut buf, kind);
             }
         }
-    }
-
-    // Claimed rewards (sorted by player, then quest)
-    let mut claimed: Vec<&(PlayerId, QuestId)> = state.claimed_rewards.iter().collect();
-    claimed.sort_by_key(|(p, q)| (p.0, q.0));
-    buf.extend_from_slice(&(claimed.len() as u64).to_le_bytes());
-    for (player, quest) in &claimed {
-        buf.extend_from_slice(&player.0.to_le_bytes());
-        buf.extend_from_slice(&quest.0.to_le_bytes());
-    }
-
-    // Group quest credits (sorted by group, then quest)
-    let mut credits: Vec<&(GroupId, QuestId)> = state.group_quest_credits.iter().collect();
-    credits.sort_by_key(|(g, q)| (g.0, q.0));
-    buf.extend_from_slice(&(credits.len() as u64).to_le_bytes());
-    for (group, quest) in &credits {
-        buf.extend_from_slice(&group.0.to_le_bytes());
-        buf.extend_from_slice(&quest.0.to_le_bytes());
     }
 
     buf
@@ -183,12 +151,8 @@ mod tests {
 
     fn test_config() -> WorldConfig {
         use crate::id::ResourceId;
-        use crate::inventory::ItemKind;
         use crate::resources::ResourceKind;
-        use crate::world_config::{
-            CreatureConfig, CreatureKind, ObjectiveKind, QuestConfig, QuestObjective, QuestReward,
-            ResourceConfig,
-        };
+        use crate::world_config::{CreatureConfig, CreatureKind, ResourceConfig};
         use glam::Vec3;
         WorldConfig {
             resources: vec![ResourceConfig {
@@ -207,16 +171,6 @@ mod tests {
                 wander_radius: 5.0,
                 food_kind: ResourceKind::Berry,
                 model_path: "fluff.glb".into(),
-            }],
-            quests: vec![QuestConfig {
-                id: crate::id::QuestId::new(1),
-                title: "Test Quest".into(),
-                description: ".".into(),
-                objectives: vec![QuestObjective {
-                    kind: ObjectiveKind::Collect(ResourceKind::Berry),
-                    target_quantity: 5,
-                }],
-                rewards: vec![QuestReward::Item(ItemKind::Resource(ResourceKind::Fiber))],
             }],
         }
     }

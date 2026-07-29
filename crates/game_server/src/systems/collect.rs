@@ -10,7 +10,6 @@ use game_protocol::messages::{
 };
 use lightyear::prelude::{MessageReceiver, MessageSender};
 use player::Player;
-use quests::components::ResourceCollectedEvent;
 use resources::components::{
     ActionSequence, InteractionCooldown, PlayerInventory, ResourceNode, ResourceNodeStatus,
 };
@@ -24,7 +23,6 @@ use super::persistence::{PersistenceCoordinator, inventory_to_rows, persist_coll
 /// Processes `ActionIntent` messages with transactional persistence.
 #[allow(clippy::type_complexity)]
 pub fn handle_action_intent(
-    mut commands: Commands,
     mut receivers: Query<(Entity, &mut MessageReceiver<ActionIntent>, &ClientPlayer)>,
     mut players: Query<(
         &Player,
@@ -57,9 +55,7 @@ pub fn handle_action_intent(
         for intent in receiver.receive() {
             match intent.kind {
                 ActionKind::Collect => {
-                    let evt = if let (Some(handle), Some(coord)) =
-                        (&persistence_handle, &mut coordinator)
-                    {
+                    if let (Some(handle), Some(coord)) = (&persistence_handle, &mut coordinator) {
                         handle_action_collect(
                             &intent,
                             link_entity,
@@ -80,9 +76,6 @@ pub fn handle_action_intent(
                             &mut nodes,
                             &mut inventory_senders,
                         )
-                    };
-                    if let Some(evt) = evt {
-                        commands.trigger(evt);
                     }
                 }
                 ActionKind::Feed => handle_feed(
@@ -104,7 +97,6 @@ pub fn handle_action_intent(
 // Non-persistence path (used in tests without persistence worker)
 // ---------------------------------------------------------------------------
 
-/// Returns `Some(ResourceCollectedEvent)` on success, `None` on failure.
 fn handle_action_collect_immediate(
     intent: &ActionIntent,
     link_entity: Entity,
@@ -123,13 +115,13 @@ fn handle_action_collect_immediate(
         &mut game_protocol::ResourceNodeState,
     )>,
     inventory_senders: &mut Query<&mut MessageSender<InventorySnapshot>>,
-) -> Option<ResourceCollectedEvent> {
+) {
     let player_entity = client_player.player_entity;
     let Ok((_player, player_transform, mut inventory, mut cooldown, mut sequence)) =
         players.get_mut(player_entity)
     else {
         warn!("collect_immediate: player missing components");
-        return None;
+        return;
     };
 
     let player_pos = player_transform.translation;
@@ -139,7 +131,7 @@ fn handle_action_collect_immediate(
         target_idx.and_then(|idx| nodes.iter_mut().find(|(_, n, _, _)| n.node_index == idx))
     else {
         warn!("collect_immediate: node not found");
-        return None;
+        return;
     };
 
     if validate_collect(
@@ -152,10 +144,9 @@ fn handle_action_collect_immediate(
         intent.sequence,
     ) != CollectValidation::Success
     {
-        return None;
+        return;
     }
 
-    let resource_kind = node.kind;
     let yield_amount = node.yield_amount;
 
     node_status.depleted = true;
@@ -163,7 +154,7 @@ fn handle_action_collect_immediate(
     rep_state.depleted = true;
     rep_state.respawn_progress = 0.0;
 
-    let ik = ItemKind::Resource(resource_kind);
+    let ik = ItemKind::Resource(node.kind);
     if let Some(ref mut inv) = inventory {
         let _ = inv.inventory.add(ik, yield_amount);
     }
@@ -176,19 +167,12 @@ fn handle_action_collect_immediate(
     }
 
     send_inventory_snapshot(link_entity, inventory.as_deref(), inventory_senders);
-
-    Some(ResourceCollectedEvent {
-        player_id: client_player.player_id,
-        resource_kind,
-        amount: yield_amount,
-    })
 }
 
 // ---------------------------------------------------------------------------
 // Transactional persistence path
 // ---------------------------------------------------------------------------
 
-/// Returns `Some(ResourceCollectedEvent)` on success, `None` on failure.
 #[allow(clippy::too_many_arguments)]
 fn handle_action_collect(
     intent: &ActionIntent,
@@ -211,14 +195,14 @@ fn handle_action_collect(
     persistence: &game_persistence::PersistenceHandle,
     coordinator: &mut PersistenceCoordinator,
     rejected_senders: &mut Query<&mut MessageSender<ActionRejected>>,
-) -> Option<ResourceCollectedEvent> {
+) {
     let player_entity = client_player.player_entity;
 
     let Ok((_player, player_transform, inventory, cooldown, sequence)) =
         players.get_mut(player_entity)
     else {
         warn!("collect: player missing components");
-        return None;
+        return;
     };
 
     let player_pos = player_transform.translation;
@@ -232,7 +216,7 @@ fn handle_action_collect(
             .map(|(e, n, ns, r)| (e, n, ns, r))
     }) else {
         warn!("collect: node not found");
-        return None;
+        return;
     };
 
     // Read-only validation using immutable refs.
@@ -246,10 +230,9 @@ fn handle_action_collect(
         intent.sequence,
     ) != CollectValidation::Success
     {
-        return None;
+        return;
     }
 
-    let resource_kind = node.kind;
     let yield_amount = node.yield_amount;
 
     // Compute new inventory state (without mutating ECS yet).
@@ -257,7 +240,7 @@ fn handle_action_collect(
         .as_deref()
         .map(|inv| inv.inventory.clone())
         .unwrap_or_default();
-    let ik = ItemKind::Resource(resource_kind);
+    let ik = ItemKind::Resource(node.kind);
     let _ = new_inv.add(ik, yield_amount);
 
     // Convert to persistence rows.
@@ -284,14 +267,7 @@ fn handle_action_collect(
                 reason: format!("persistence error: {e}"),
             });
         }
-        return None;
     }
-
-    Some(ResourceCollectedEvent {
-        player_id: client_player.player_id,
-        resource_kind,
-        amount: yield_amount,
-    })
 }
 
 // ---------------------------------------------------------------------------

@@ -78,16 +78,12 @@ pub(crate) fn play_button(
     mut transport: ResMut<TransportState>,
     time: Res<Time>,
     mut next_state: ResMut<NextState<AppFlow>>,
-    menus: Query<Entity, With<MenuRoot>>,
 ) {
     for interaction in &mut interactions {
         if *interaction != Interaction::Pressed {
             continue;
         }
         next_state.set(AppFlow::InGame);
-        for entity in &menus {
-            commands.entity(entity).despawn();
-        }
         start_connection(
             &mut commands,
             &config,
@@ -116,6 +112,7 @@ mod tests {
     use lightyear::prelude::Client;
 
     use crate::config::build_client_config;
+    use crate::flow;
 
     fn menu_app() -> App {
         let mut app = App::new();
@@ -126,6 +123,7 @@ mod tests {
         app.insert_resource(TransportState::detect());
         app.add_systems(Startup, spawn_menu);
         app.add_systems(Update, play_button);
+        app.add_systems(OnExit(AppFlow::Menu), flow::despawn_menu);
         app
     }
 
@@ -173,7 +171,6 @@ mod tests {
     #[test]
     fn menu_input_gate_blocks_gather() {
         use crate::input::{InputState, gather_input};
-        use crate::prediction::InputHistory;
 
         let mut app = App::new();
         app.add_plugins(bevy::state::app::StatesPlugin);
@@ -185,7 +182,6 @@ mod tests {
         app.update(); // start state transition
         app.update(); // actually enter Menu
         app.init_resource::<InputState>();
-        app.init_resource::<InputHistory>();
         app.init_resource::<ButtonInput<KeyCode>>();
         app.init_resource::<Touches>();
         app.init_resource::<crate::touch::TouchJump>();

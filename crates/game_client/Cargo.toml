@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bevy = { workspace = true, features = ["3d", "ui", "default_font", "webp"] }
+bevy = { workspace = true, features = ["3d", "ui", "default_font", "jpeg", "webp"] }
 bevy-inspector-egui = "0.37"
 game_core = { workspace = true }
 game_protocol = { workspace = true }
@@ -26,3 +26,4 @@ aeronet_websocket.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+serde = { workspace = true }

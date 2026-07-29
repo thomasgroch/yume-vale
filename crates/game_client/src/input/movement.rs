@@ -7,7 +7,6 @@ use lightyear::prelude::MessageSender;
 
 use super::touch::{TouchParams, swipe_direction};
 use crate::camera::CameraOrbit;
-use crate::prediction::InputHistory;
 use crate::touch::movement_touch_id;
 
 #[derive(Resource, Default)]
@@ -61,7 +60,6 @@ pub fn gather_input(
     orbit: Res<CameraOrbit>,
     flow: Res<State<crate::flow::AppFlow>>,
     mut state: ResMut<InputState>,
-    mut history: ResMut<InputHistory>,
     mut senders: Query<&mut MessageSender<ClientInput>>,
 ) {
     if flow.get() == &crate::flow::AppFlow::Menu {
@@ -89,8 +87,6 @@ pub fn gather_input(
         run,
         jump: keys.pressed(KeyCode::Space) || touch.touch_jump.0,
     };
-
-    history.push(input.clone());
 
     if let Ok(mut sender) = senders.single_mut() {
         sender.send::<InputChannel>(input);

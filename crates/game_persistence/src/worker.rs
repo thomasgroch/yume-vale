@@ -192,16 +192,6 @@ async fn handle_command(
         CommandKind::LoadInventory { player_id } => {
             repository::load_inventory(pool, player_id).await
         }
-        CommandKind::SaveQuestProgress {
-            player_id,
-            quest_id,
-            progress,
-            completed,
-        } => repository::save_quest_progress(pool, player_id, quest_id, progress, completed).await,
-        CommandKind::LoadQuestProgress {
-            player_id,
-            quest_id,
-        } => repository::load_quest_progress(pool, player_id, quest_id).await,
         CommandKind::SaveCreatureBond {
             player_id,
             creature_kind,

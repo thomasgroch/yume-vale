@@ -159,7 +159,6 @@ fn world_config_with_wood() -> WorldConfig {
             model_path: "wood.glb".into(),
         }],
         creatures: vec![],
-        quests: vec![],
     }
 }
 

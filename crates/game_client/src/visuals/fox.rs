@@ -1,5 +1,4 @@
-use bevy::animation::graph::{AnimationGraph, AnimationGraphHandle, AnimationNodeIndex};
-use bevy::gltf::GltfAssetLabel;
+use bevy::animation::graph::{AnimationGraphHandle, AnimationNodeIndex};
 use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use game_core::constants::{RUN_SPEED, WALK_SPEED};
@@ -8,7 +7,6 @@ use lightyear::prelude::Interpolated;
 use player::{LocalPlayer, Player};
 
 use crate::connection::LocalPlayerId;
-use crate::prediction::Predicted;
 
 /// Duration of the wave animation clip in seconds.
 const WAVE_DURATION: f32 = 2.0;
@@ -48,12 +46,12 @@ enum FoxClip {
 /// Handles and graph nodes for the fox character, built once at startup.
 #[derive(Resource, Clone)]
 pub struct FoxAssets {
-    scene: Handle<WorldAsset>,
-    graph: Handle<AnimationGraph>,
-    idle: AnimationNodeIndex,
-    walk: AnimationNodeIndex,
-    run: AnimationNodeIndex,
-    wave: AnimationNodeIndex,
+    pub(crate) scene: Handle<WorldAsset>,
+    pub(crate) graph: Handle<AnimationGraph>,
+    pub(crate) idle: AnimationNodeIndex,
+    pub(crate) walk: AnimationNodeIndex,
+    pub(crate) run: AnimationNodeIndex,
+    pub(crate) wave: AnimationNodeIndex,
 }
 
 impl FoxAssets {
@@ -69,36 +67,6 @@ impl FoxAssets {
     fn nodes(&self) -> [AnimationNodeIndex; 4] {
         [self.idle, self.walk, self.run, self.wave]
     }
-}
-
-/// Loads the rigged fox scene and builds the idle/walk/run/wave animation
-/// graph. The idle/wave clips come from standalone GLB files; walk and run
-/// come from the rigging's bundled animations (same skeleton).
-pub fn load_fox_assets(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
-) {
-    let scene = asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/fox/rigged.glb"));
-    let idle_clip =
-        asset_server.load(GltfAssetLabel::Animation(0).from_asset("models/fox/idle.glb"));
-    let walk_clip =
-        asset_server.load(GltfAssetLabel::Animation(0).from_asset("models/fox/walking.glb"));
-    let run_clip =
-        asset_server.load(GltfAssetLabel::Animation(0).from_asset("models/fox/running.glb"));
-    let wave_clip =
-        asset_server.load(GltfAssetLabel::Animation(0).from_asset("models/fox/wave.glb"));
-
-    let (graph, indices) = AnimationGraph::from_clips([idle_clip, walk_clip, run_clip, wave_clip]);
-    info!("fox assets loaded");
-    commands.insert_resource(FoxAssets {
-        scene,
-        graph: graphs.add(graph),
-        idle: indices[0],
-        walk: indices[1],
-        run: indices[2],
-        wave: indices[3],
-    });
 }
 
 /// Per-player animation state: the clip being blended toward, the
@@ -312,6 +280,9 @@ pub fn animate_foxes(
 /// Pick the locomotion clip based on EMA speed with hysteresis.
 fn clip_by_speed(current: FoxClip, speed: f32) -> FoxClip {
     match current {
+        FoxClip::Wave if speed > RUN_SPEED_THRESHOLD => FoxClip::Run,
+        FoxClip::Wave if speed > IDLE_SPEED_THRESHOLD => FoxClip::Walk,
+        FoxClip::Wave => FoxClip::Idle,
         FoxClip::Idle if speed > IDLE_SPEED_THRESHOLD + HYSTERESIS => FoxClip::Walk,
         FoxClip::Walk if speed < IDLE_SPEED_THRESHOLD - HYSTERESIS => FoxClip::Idle,
         FoxClip::Walk if speed > RUN_SPEED_THRESHOLD + HYSTERESIS => FoxClip::Run,
@@ -391,12 +362,8 @@ pub fn mark_local_player_visuals(
     }
 }
 
-type InterpolatedPlayers<'w, 's> = Query<
-    'w,
-    's,
-    (&'static PlayerPosition, &'static mut Transform),
-    (With<Interpolated>, Without<Predicted>),
->;
+type InterpolatedPlayers<'w, 's> =
+    Query<'w, 's, (&'static PlayerPosition, &'static mut Transform), With<Interpolated>>;
 
 /// Copies `PlayerPosition` → `Transform.translation` for interpolated entities,
 /// chasing the interpolated value with an exponential smoothing
@@ -490,6 +457,7 @@ mod tests {
     fn all_public_systems_can_be_registered() {
         let mut app = App::new();
         app.add_plugins(bevy::asset::AssetPlugin::default());
+        insert_fox_assets(&mut app);
         app.add_systems(
             Update,
             (
@@ -500,7 +468,6 @@ mod tests {
                 sync_position_to_transform,
             ),
         );
-        app.add_systems(Startup, load_fox_assets);
     }
 
     fn insert_fox_assets(app: &mut App) {
@@ -1104,6 +1071,61 @@ mod tests {
         assert!(
             state.wave_timer.is_none(),
             "non-wave emotes must not set wave_timer"
+        );
+    }
+
+    #[test]
+    fn sync_position_converges_monotonically_for_local_player() {
+        let mut app = App::new();
+        app.init_resource::<Time>();
+        app.add_systems(Update, sync_position_to_transform);
+
+        // Local player has both Interpolated (from replication) and LocalPlayer.
+        // PlayerPosition is at target (10, 0, 0), Transform starts at origin.
+        let target = Vec3::new(10.0, 0.0, 0.0);
+        let entity = app
+            .world_mut()
+            .spawn((
+                LocalPlayer,
+                PlayerPosition(target),
+                Transform::from_translation(Vec3::ZERO),
+                Interpolated,
+            ))
+            .id();
+
+        let mut prev_x = 0.0f32;
+        // Advance 20 frames at 0.1s each — should converge monotonically.
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs_f32(0.1));
+            app.update();
+
+            let t = app.world().get::<Transform>(entity).unwrap();
+            let x = t.translation.x;
+            // Must always move toward target without overshooting.
+            assert!(
+                x >= prev_x,
+                "translation must increase monotonically toward {}: prev={}, cur={}",
+                target.x,
+                prev_x,
+                x
+            );
+            assert!(
+                x <= target.x,
+                "translation must not overshoot target {}: got {}",
+                target.x,
+                x
+            );
+            prev_x = x;
+        }
+        // After 20 frames it should be within 1% of target.
+        let t = app.world().get::<Transform>(entity).unwrap();
+        assert!(
+            (t.translation.x - target.x).abs() < 0.1,
+            "expected ~{}, got {:?}",
+            target.x,
+            t.translation
         );
     }
 }

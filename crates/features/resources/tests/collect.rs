@@ -41,7 +41,6 @@ fn test_world_config() -> WorldConfig {
             },
         ],
         creatures: vec![],
-        quests: vec![],
     }
 }
 

@@ -1,6 +1,5 @@
 use crate::arena::ARENA_RADIUS;
-use crate::id::{CreatureId, QuestId, ResourceId};
-use crate::inventory::ItemKind;
+use crate::id::{CreatureId, ResourceId};
 use crate::resources::ResourceKind;
 use glam::Vec3;
 use glam::Vec3Swizzles;
@@ -13,18 +12,6 @@ use thiserror::Error;
 pub enum CreatureKind {
     Fluffball,
     Glimmerwing,
-}
-
-/// Kind of quest objective.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ObjectiveKind {
-    Collect(ResourceKind),
-}
-
-/// Kind of quest reward.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum QuestReward {
-    Item(ItemKind),
 }
 
 /// Configuration for a single resource type.
@@ -59,29 +46,11 @@ pub struct CreatureConfig {
     pub model_path: String,
 }
 
-/// A single quest objective.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct QuestObjective {
-    pub kind: ObjectiveKind,
-    pub target_quantity: u32,
-}
-
-/// Configuration for a single quest.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct QuestConfig {
-    pub id: QuestId,
-    pub title: String,
-    pub description: String,
-    pub objectives: Vec<QuestObjective>,
-    pub rewards: Vec<QuestReward>,
-}
-
 /// Top-level world configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct WorldConfig {
     pub resources: Vec<ResourceConfig>,
     pub creatures: Vec<CreatureConfig>,
-    pub quests: Vec<QuestConfig>,
 }
 
 impl WorldConfig {
@@ -153,26 +122,6 @@ impl WorldConfig {
             }
         }
 
-        // --- quests ---
-        let mut seen_quest_ids = HashSet::new();
-        for quest in &self.quests {
-            if !seen_quest_ids.insert(quest.id) {
-                return Err(WorldConfigError::DuplicateQuestId(quest.id));
-            }
-
-            if quest.objectives.is_empty() {
-                return Err(WorldConfigError::NoObjectives { id: quest.id });
-            }
-            if quest.rewards.is_empty() {
-                return Err(WorldConfigError::NoRewards { id: quest.id });
-            }
-            for objective in &quest.objectives {
-                if objective.target_quantity == 0 {
-                    return Err(WorldConfigError::ZeroTargetQuantity { id: quest.id });
-                }
-            }
-        }
-
         Ok(())
     }
 }
@@ -191,9 +140,6 @@ pub enum WorldConfigError {
 
     #[error("duplicate creature ID: {0}")]
     DuplicateCreatureId(CreatureId),
-
-    #[error("duplicate quest ID: {0}")]
-    DuplicateQuestId(QuestId),
 
     #[error("resource {kind:?} has zero count")]
     ZeroCount { kind: ResourceKind },
@@ -229,15 +175,6 @@ pub enum WorldConfigError {
 
     #[error("creature {kind:?} center ({pos:?}) is outside arena bounds")]
     CreaturePositionOutOfBounds { kind: CreatureKind, pos: Vec3 },
-
-    #[error("quest {id} has no objectives")]
-    NoObjectives { id: QuestId },
-
-    #[error("quest {id} has no rewards")]
-    NoRewards { id: QuestId },
-
-    #[error("quest {id} has objective with zero target quantity")]
-    ZeroTargetQuantity { id: QuestId },
 }
 
 // ---------------------------------------------------------------------------
@@ -297,22 +234,6 @@ mod tests {
                 model_path: "assets/models/creatures/glimmerwing.glb",
             ),
         ],
-        quests: [
-            (
-                id: (1),
-                title: "A Berry Good Start",
-                description: "Collect some berries for the village elder.",
-                objectives: [
-                    (
-                        kind: Collect(Berry),
-                        target_quantity: 5,
-                    ),
-                ],
-                rewards: [
-                    Item(Resource(Fiber)),
-                ],
-            ),
-        ],
     )"#;
 
     // -----------------------------------------------------------------------
@@ -324,7 +245,6 @@ mod tests {
         let config = WorldConfig::from_str(VALID_RON).unwrap();
         assert_eq!(config.resources.len(), 3, "expected 3 resources");
         assert_eq!(config.creatures.len(), 2, "expected 2 creatures");
-        assert_eq!(config.quests.len(), 1, "expected 1 quest");
     }
 
     #[test]
@@ -382,24 +302,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn valid_config_quests() {
-        let config = WorldConfig::from_str(VALID_RON).unwrap();
-        let quest = &config.quests[0];
-
-        assert_eq!(quest.title, "A Berry Good Start");
-        assert_eq!(quest.objectives.len(), 1);
-        assert_eq!(quest.objectives[0].target_quantity, 5);
-        assert_eq!(quest.rewards.len(), 1);
-
-        // Reward should be Item(Resource(Fiber))
-        match &quest.rewards[0] {
-            QuestReward::Item(ItemKind::Resource(kind)) => {
-                assert_eq!(*kind, ResourceKind::Fiber);
-            }
-        }
-    }
-
     // -----------------------------------------------------------------------
     // Malformed fixture tests (expect typed errors)
     // -----------------------------------------------------------------------
@@ -418,7 +320,6 @@ mod tests {
                 (id: (1), kind: Crystal, count: 1, yield_amount: 1, respawn_seconds: 10.0, positions: [(1.0, 0.0, 0.0)], model_path: "crystal.glb"),
             ],
             creatures: [],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(
@@ -435,41 +336,11 @@ mod tests {
                 (id: (1), kind: Fluffball, center: (0.0, 0.0, 0.0), wander_radius: 5.0, food_kind: Berry, model_path: "fluff.glb"),
                 (id: (1), kind: Glimmerwing, center: (1.0, 0.0, 0.0), wander_radius: 5.0, food_kind: Crystal, model_path: "glim.glb"),
             ],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(
             matches!(err, WorldConfigError::DuplicateCreatureId(_)),
             "expected DuplicateCreatureId, got {err}"
-        );
-    }
-
-    #[test]
-    fn duplicate_quest_id_returns_specific_error() {
-        let ron = r#"(
-            resources: [],
-            creatures: [],
-            quests: [
-                (
-                    id: (1),
-                    title: "Q1",
-                    description: "",
-                    objectives: [(kind: Collect(Berry), target_quantity: 3)],
-                    rewards: [Item(Resource(Fiber))],
-                ),
-                (
-                    id: (1),
-                    title: "Q2",
-                    description: "",
-                    objectives: [(kind: Collect(Wood), target_quantity: 3)],
-                    rewards: [Item(Resource(Fiber))],
-                ),
-            ],
-        )"#;
-        let err = WorldConfig::from_str(ron).unwrap_err();
-        assert!(
-            matches!(err, WorldConfigError::DuplicateQuestId(_)),
-            "expected DuplicateQuestId, got {err}"
         );
     }
 
@@ -480,7 +351,6 @@ mod tests {
                 (id: (1), kind: Wood, count: 0, yield_amount: 1, respawn_seconds: 10.0, positions: [], model_path: "wood.glb"),
             ],
             creatures: [],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(matches!(err, WorldConfigError::ZeroCount { .. }));
@@ -493,7 +363,6 @@ mod tests {
                 (id: (1), kind: Wood, count: 1, yield_amount: 0, respawn_seconds: 10.0, positions: [(0.0, 0.0, 0.0)], model_path: "wood.glb"),
             ],
             creatures: [],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(matches!(err, WorldConfigError::ZeroYield { .. }));
@@ -506,7 +375,6 @@ mod tests {
                 (id: (1), kind: Wood, count: 1, yield_amount: 1, respawn_seconds: 0.0, positions: [(0.0, 0.0, 0.0)], model_path: "wood.glb"),
             ],
             creatures: [],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(matches!(err, WorldConfigError::ZeroRespawn { .. }));
@@ -519,7 +387,6 @@ mod tests {
                 (id: (1), kind: Wood, count: 1, yield_amount: 1, respawn_seconds: -5.0, positions: [(0.0, 0.0, 0.0)], model_path: "wood.glb"),
             ],
             creatures: [],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(matches!(err, WorldConfigError::ZeroRespawn { .. }));
@@ -532,7 +399,6 @@ mod tests {
                 (id: (1), kind: Wood, count: 3, yield_amount: 1, respawn_seconds: 10.0, positions: [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)], model_path: "wood.glb"),
             ],
             creatures: [],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(
@@ -548,7 +414,6 @@ mod tests {
                 (id: (1), kind: Wood, count: 1, yield_amount: 1, respawn_seconds: 10.0, positions: [(30.0, 0.0, 0.0)], model_path: "wood.glb"),
             ],
             creatures: [],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(
@@ -564,7 +429,6 @@ mod tests {
             creatures: [
                 (id: (1), kind: Fluffball, center: (0.0, 0.0, 0.0), wander_radius: 0.0, food_kind: Berry, model_path: "fluff.glb"),
             ],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(
@@ -580,78 +444,11 @@ mod tests {
             creatures: [
                 (id: (1), kind: Fluffball, center: (50.0, 0.0, 0.0), wander_radius: 5.0, food_kind: Berry, model_path: "fluff.glb"),
             ],
-            quests: [],
         )"#;
         let err = WorldConfig::from_str(ron).unwrap_err();
         assert!(
             matches!(err, WorldConfigError::CreaturePositionOutOfBounds { .. }),
             "expected CreaturePositionOutOfBounds, got {err}"
-        );
-    }
-
-    #[test]
-    fn quest_no_objectives_returns_error() {
-        let ron = r#"(
-            resources: [],
-            creatures: [],
-            quests: [
-                (
-                    id: (1),
-                    title: "Empty Quest",
-                    description: "",
-                    objectives: [],
-                    rewards: [Item(Resource(Fiber))],
-                ),
-            ],
-        )"#;
-        let err = WorldConfig::from_str(ron).unwrap_err();
-        assert!(
-            matches!(err, WorldConfigError::NoObjectives { .. }),
-            "expected NoObjectives, got {err}"
-        );
-    }
-
-    #[test]
-    fn quest_no_rewards_returns_error() {
-        let ron = r#"(
-            resources: [],
-            creatures: [],
-            quests: [
-                (
-                    id: (1),
-                    title: "No Rewards",
-                    description: "",
-                    objectives: [(kind: Collect(Berry), target_quantity: 3)],
-                    rewards: [],
-                ),
-            ],
-        )"#;
-        let err = WorldConfig::from_str(ron).unwrap_err();
-        assert!(
-            matches!(err, WorldConfigError::NoRewards { .. }),
-            "expected NoRewards, got {err}"
-        );
-    }
-
-    #[test]
-    fn zero_target_quantity_returns_error() {
-        let ron = r#"(
-            resources: [],
-            creatures: [],
-            quests: [
-                (
-                    id: (1),
-                    title: "Zero Target",
-                    description: "",
-                    objectives: [(kind: Collect(Berry), target_quantity: 0)],
-                    rewards: [Item(Resource(Fiber))],
-                ),
-            ],
-        )"#;
-        let err = WorldConfig::from_str(ron).unwrap_err();
-        assert!(
-            matches!(err, WorldConfigError::ZeroTargetQuantity { .. }),
-            "expected ZeroTargetQuantity, got {err}"
         );
     }
 

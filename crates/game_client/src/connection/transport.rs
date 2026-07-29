@@ -60,7 +60,9 @@ pub(crate) fn start_connection(
     #[allow(unused_variables)] transport: &mut TransportState,
     #[allow(unused_variables)] now_seconds: f64,
 ) {
-    let cid = client_id::derive_client_id();
+    let Some(cid) = client_id::derive_client_id() else {
+        return;
+    };
     let netcode_config = netcode_config();
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -97,7 +99,7 @@ pub(crate) fn start_connection(
             let Some(client) = build_netcode_client(token_addr, cid, &netcode_config) else {
                 return;
             };
-            let entity = commands
+            commands
                 .spawn((
                     Client::default(),
                     LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
@@ -107,12 +109,8 @@ pub(crate) fn start_connection(
                     ReplicationReceiver,
                     WebSocketClientIo::from_url(aeronet_websocket::client::ClientConfig, url),
                 ))
-                .id();
-            commands.entity(entity).trigger(|e| Connect { entity: e });
-            return;
-        }
-
-        if transport.explicit_ws_override || transport.mode == TransportMode::WebSocket {
+                .id()
+        } else if transport.explicit_ws_override || transport.mode == TransportMode::WebSocket {
             if let Some(wss_url) = transport.prod_wss_url() {
                 let Some(token_addr) = parse_addr(&config.websocket_addr, "websocket_addr") else {
                     return;
@@ -120,7 +118,7 @@ pub(crate) fn start_connection(
                 let Some(client) = build_netcode_client(token_addr, cid, &netcode_config) else {
                     return;
                 };
-                let entity = commands
+                commands
                     .spawn((
                         Client::default(),
                         LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
@@ -133,19 +131,56 @@ pub(crate) fn start_connection(
                             wss_url,
                         ),
                     ))
-                    .id();
-                commands.entity(entity).trigger(|e| Connect { entity: e });
-                return;
+                    .id()
+            } else {
+                let addr_string = config.websocket_addr.clone();
+                let Some(addr) = parse_addr(&addr_string, "websocket_addr") else {
+                    return;
+                };
+                let Some(client) = build_netcode_client(addr, cid, &netcode_config) else {
+                    return;
+                };
+                commands
+                    .spawn((
+                        Client::default(),
+                        LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
+                        PeerAddr(addr),
+                        Link::new(None),
+                        client,
+                        ReplicationReceiver,
+                        WebSocketClientIo::from_addr(
+                            aeronet_websocket::client::ClientConfig,
+                            WebSocketScheme::Plain,
+                        ),
+                    ))
+                    .id()
             }
-
-            let addr_string = config.websocket_addr.clone();
-            let Some(addr) = parse_addr(&addr_string, "websocket_addr") else {
+        } else {
+            let page_host = transport.page_host.as_deref();
+            let is_local = transport.page_is_local;
+            let wt_port_override = option_env!("YUME_TEST_WT_PORT");
+            let template = match wt_port_override {
+                Some(port) => format!("127.0.0.1:{port}"),
+                None => config.web_transport_addr.clone(),
+            };
+            let addr_string = derive_wasm_addr(&template, is_local, page_host, "5001");
+            let Some(addr) = parse_addr(&addr_string, "web_transport_addr") else {
                 return;
             };
             let Some(client) = build_netcode_client(addr, cid, &netcode_config) else {
                 return;
             };
-            let entity = commands
+            let digest = if is_local {
+                include_str!("../../../../certs/digest.txt")
+                    .trim()
+                    .to_string()
+            } else {
+                String::new()
+            };
+
+            transport.start_wt_attempt(now_seconds);
+
+            commands
                 .spawn((
                     Client::default(),
                     LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
@@ -153,136 +188,15 @@ pub(crate) fn start_connection(
                     Link::new(None),
                     client,
                     ReplicationReceiver,
-                    WebSocketClientIo::from_addr(
-                        aeronet_websocket::client::ClientConfig,
-                        WebSocketScheme::Plain,
-                    ),
+                    WebTransportClientIo {
+                        certificate_digest: digest,
+                    },
                 ))
-                .id();
-            commands.entity(entity).trigger(|e| Connect { entity: e });
-            return;
+                .id()
         }
-
-        let page_host = transport.page_host.as_deref();
-        let is_local = transport.page_is_local;
-        let wt_port_override = option_env!("YUME_TEST_WT_PORT");
-        let template = match wt_port_override {
-            Some(port) => format!("127.0.0.1:{port}"),
-            None => config.web_transport_addr.clone(),
-        };
-        let addr_string = derive_wasm_addr(&template, is_local, page_host, "5001");
-        let Some(addr) = parse_addr(&addr_string, "web_transport_addr") else {
-            return;
-        };
-        let Some(client) = build_netcode_client(addr, cid, &netcode_config) else {
-            return;
-        };
-        let digest = if is_local {
-            include_str!("../../../../certs/digest.txt")
-                .trim()
-                .to_string()
-        } else {
-            String::new()
-        };
-
-        transport.start_wt_attempt(now_seconds);
-
-        let entity = commands
-            .spawn((
-                Client::default(),
-                LocalAddr(SocketAddr::from(([0, 0, 0, 0], 0))),
-                PeerAddr(addr),
-                Link::new(None),
-                client,
-                ReplicationReceiver,
-                WebTransportClientIo {
-                    certificate_digest: digest,
-                },
-            ))
-            .id();
-        commands.entity(entity).trigger(|e| Connect { entity: e });
-        return;
     };
     commands.entity(entity).trigger(|e| Connect { entity: e });
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use core::net::SocketAddr;
-    use lightyear::netcode::client_plugin::NetcodeConfig;
-
-    #[test]
-    fn parse_addr_valid_ipv4() {
-        let addr = parse_addr("127.0.0.1:5000", "test");
-        assert!(addr.is_some());
-        assert_eq!(addr.unwrap().port(), 5000);
-    }
-
-    #[test]
-    fn parse_addr_valid_ipv6() {
-        let addr = parse_addr("[::1]:5001", "test");
-        assert!(addr.is_some());
-        assert_eq!(addr.unwrap().port(), 5001);
-    }
-
-    #[test]
-    fn parse_addr_invalid_format_returns_none() {
-        let addr = parse_addr("not-an-addr", "test");
-        assert!(addr.is_none());
-    }
-
-    #[test]
-    fn build_netcode_client_creates_ok() {
-        let addr: SocketAddr = "127.0.0.1:5000".parse().unwrap();
-        let cfg = NetcodeConfig {
-            client_timeout_secs: 10,
-            token_expire_secs: -1,
-            ..Default::default()
-        };
-        let client = build_netcode_client(addr, 42, &cfg);
-        assert!(client.is_some(), "NetcodeClient should be created");
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn start_connection_spawns_client_entity() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        let config = ClientConfig::default();
-        let mut commands = app.world_mut().commands();
-        let mut transport = TransportState::default();
-        start_connection(&mut commands, &config, &mut transport, 0.0);
-        app.update();
-        let count = app
-            .world_mut()
-            .query_filtered::<Entity, With<Client>>()
-            .iter(app.world())
-            .count();
-        assert_eq!(count, 1, "start_connection must spawn a Client entity");
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn start_connection_respects_server_addr_env() {
-        unsafe {
-            std::env::set_var("YUME_SERVER_ADDR", "10.0.0.1:5000");
-        }
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        let config = ClientConfig::default();
-        let mut commands = app.world_mut().commands();
-        let mut transport = TransportState::default();
-        start_connection(&mut commands, &config, &mut transport, 0.0);
-        app.update();
-        let count = app
-            .world_mut()
-            .query_filtered::<Entity, With<Client>>()
-            .iter(app.world())
-            .count();
-        assert_eq!(count, 1, "must still spawn Client with env override");
-        unsafe {
-            std::env::remove_var("YUME_SERVER_ADDR");
-        }
-    }
-}
+mod tests;

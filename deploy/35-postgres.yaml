@@ -1,7 +1,7 @@
 # PostgreSQL StatefulSet for game persistence.
 #
 # ⚠  NO BACKUP — This is a single-node database without replication or backup.
-# The PVC contains all player data (identities, inventories, quest progress,
+# The PVC contains all player data (identities, inventories,
 # creature bonds, plot assignments, decorations).  Losing the PVC means losing
 # ALL save data.  See docs/deploy.md#database for details.
 #

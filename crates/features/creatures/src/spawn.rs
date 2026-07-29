@@ -116,7 +116,6 @@ mod tests {
                     model_path: "glim.glb".into(),
                 },
             ],
-            quests: vec![],
         }
     }
 

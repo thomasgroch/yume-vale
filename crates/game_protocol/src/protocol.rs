@@ -35,21 +35,6 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<messages::ActionIntent>()
             .add_direction(NetworkDirection::ClientToServer);
 
-        app.register_message::<messages::ChatSend>()
-            .add_direction(NetworkDirection::ClientToServer);
-
-        app.register_message::<messages::GroupInvite>()
-            .add_direction(NetworkDirection::ClientToServer);
-
-        app.register_message::<messages::GroupAccept>()
-            .add_direction(NetworkDirection::ClientToServer);
-
-        app.register_message::<messages::GroupDecline>()
-            .add_direction(NetworkDirection::ClientToServer);
-
-        app.register_message::<messages::GroupLeave>()
-            .add_direction(NetworkDirection::ClientToServer);
-
         app.register_message::<messages::EmoteIntent>()
             .add_direction(NetworkDirection::ClientToServer);
 
@@ -69,22 +54,10 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<messages::ConnectionRejected>()
             .add_direction(NetworkDirection::ServerToClient);
 
-        app.register_message::<messages::ChatReceived>()
-            .add_direction(NetworkDirection::ServerToClient);
-
-        app.register_message::<messages::GroupUpdate>()
-            .add_direction(NetworkDirection::ServerToClient);
-
-        app.register_message::<messages::InputAck>()
-            .add_direction(NetworkDirection::ServerToClient);
-
         app.register_message::<messages::ActionRejected>()
             .add_direction(NetworkDirection::ServerToClient);
 
         app.register_message::<messages::InventorySnapshot>()
-            .add_direction(NetworkDirection::ServerToClient);
-
-        app.register_message::<messages::QuestSnapshot>()
             .add_direction(NetworkDirection::ServerToClient);
 
         app.register_message::<messages::BondSnapshot>()

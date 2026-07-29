@@ -16,7 +16,6 @@ resources = { workspace = true }
 creatures = { workspace = true }
 social = { workspace = true }
 housing = { workspace = true }
-quests = { workspace = true }
 tracing = { workspace = true }
 aeronet_websocket.workspace = true
 aeronet_webtransport.workspace = true

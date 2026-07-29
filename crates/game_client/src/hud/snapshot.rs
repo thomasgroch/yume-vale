@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 use game_core::inventory::ItemKind;
 use game_core::resources::ResourceKind;
-use game_protocol::messages::{
-    ActionRejected, InventorySnapshot, ItemSlotData, QuestSnapshot, QuestStateData,
-};
+use game_protocol::messages::{ActionRejected, InventorySnapshot, ItemSlotData};
 use lightyear::prelude::MessageReceiver;
 
 // ─── Client-side snapshot resources (pure projection) ───────────────────
@@ -11,11 +9,6 @@ use lightyear::prelude::MessageReceiver;
 #[derive(Resource, Default)]
 pub struct ClientInventory {
     pub items: Vec<ItemSlotData>,
-}
-
-#[derive(Resource, Default)]
-pub struct ClientQuests {
-    pub quests: Vec<QuestStateData>,
 }
 
 /// Cooldown state — set to `true` when server confirms an action, cleared
@@ -52,18 +45,6 @@ pub fn receive_inventory_snapshot(
     for mut receiver in &mut receivers {
         for snapshot in receiver.receive() {
             client_inv.items = snapshot.items;
-        }
-    }
-}
-
-/// Project `QuestSnapshot` messages into the `ClientQuests` resource.
-pub fn receive_quest_snapshot(
-    mut receivers: Query<&mut MessageReceiver<QuestSnapshot>>,
-    mut client_quests: ResMut<ClientQuests>,
-) {
-    for mut receiver in &mut receivers {
-        for snapshot in receiver.receive() {
-            client_quests.quests = snapshot.quests;
         }
     }
 }
@@ -135,12 +116,6 @@ mod tests {
     fn client_inventory_default_is_empty() {
         let inv = ClientInventory::default();
         assert!(inv.items.is_empty());
-    }
-
-    #[test]
-    fn client_quests_default_is_empty() {
-        let q = ClientQuests::default();
-        assert!(q.quests.is_empty());
     }
 
     #[test]

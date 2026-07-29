@@ -3859,6 +3859,7 @@ dependencies = [
  "js-sys",
  "lightyear",
  "player",
+ "serde",
  "serde_json",
  "web-sys",
 ]
@@ -3916,7 +3917,6 @@ dependencies = [
  "housing",
  "lightyear",
  "player",
- "quests",
  "resources",
  "rustls-pemfile",
  "serde_json",
@@ -4607,6 +4607,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -6966,22 +6968,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quests"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "game_core",
- "game_persistence",
- "game_protocol",
- "lightyear",
- "player",
- "resources",
- "serde",
- "social",
- "tracing",
-]
-
-[[package]]
 name = "quick-error"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8025,8 +8011,6 @@ dependencies = [
  "game_protocol",
  "lightyear",
  "player",
- "serde_json",
- "tracing",
 ]
 
 [[package]]

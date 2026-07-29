@@ -1,5 +1,4 @@
 mod inventory;
-pub(crate) mod quest;
 pub(crate) mod snapshot;
 mod status;
 pub(crate) mod version;
@@ -8,11 +7,10 @@ pub use inventory::{
     FeedbackText, InteractionPrompt, InventoryPanel, ResourceQuantity, spawn_inventory_panel,
     update_inventory_panel,
 };
-pub use quest::{CompletionText, ObjectiveText, QuestPanel, spawn_quest_panel, update_quest_panel};
 pub use snapshot::{
-    ClientActionFeedback, ClientCooldown, ClientInventory, ClientQuests, clear_action_feedback,
-    receive_action_rejected, receive_inventory_snapshot, receive_quest_snapshot, resource_label,
-    resource_quantity, tick_cooldown,
+    ClientActionFeedback, ClientCooldown, ClientInventory, clear_action_feedback,
+    receive_action_rejected, receive_inventory_snapshot, resource_label, resource_quantity,
+    tick_cooldown,
 };
 pub(crate) use status::{reconnect_button, spawn_hud, update_hud_status};
 pub use version::{VersionText, update_version_text};
@@ -52,8 +50,7 @@ mod tests {
         app.init_resource::<ClientInventory>();
         app.init_resource::<ClientCooldown>();
         app.init_resource::<ClientActionFeedback>();
-        app.init_resource::<ClientQuests>();
-        app.add_systems(Startup, (spawn_inventory_panel, spawn_quest_panel));
+        app.add_systems(Startup, spawn_inventory_panel);
         app.add_systems(Update, toggle_gameplay_panels);
 
         app.world_mut()
@@ -86,8 +83,7 @@ mod tests {
         app.init_resource::<ClientInventory>();
         app.init_resource::<ClientCooldown>();
         app.init_resource::<ClientActionFeedback>();
-        app.init_resource::<ClientQuests>();
-        app.add_systems(Startup, (spawn_inventory_panel, spawn_quest_panel));
+        app.add_systems(Startup, spawn_inventory_panel);
         app.add_systems(Update, toggle_gameplay_panels);
 
         app.world_mut()

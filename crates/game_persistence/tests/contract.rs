@@ -7,9 +7,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use game_persistence::worker::PersistenceWorker;
-use game_persistence::{
-    CreatureBondRow, InventoryRow, PersistenceError, PlotDecorationRow, QuestProgressRow,
-};
+use game_persistence::{CreatureBondRow, InventoryRow, PersistenceError, PlotDecorationRow};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,9 +57,6 @@ fn migrate_creates_tables() {
             }],
         )
         .unwrap();
-
-        // quest_progress
-        h.save_quest_progress(100, 1, 0.5, false).unwrap();
 
         // creature_bond
         h.save_creature_bond(100, "Fluffball", 3).unwrap();
@@ -153,24 +148,6 @@ fn save_and_load_inventory() {
 }
 
 #[test]
-fn save_and_load_quest_progress() {
-    with_worker(|w| {
-        let h = w.handle();
-
-        h.save_quest_progress(2, 10, 0.75, false).unwrap();
-        let loaded = h.load_quest_progress(2, 10).unwrap();
-        assert_eq!(
-            loaded,
-            Some(QuestProgressRow {
-                quest_id: 10,
-                progress: 0.75,
-                completed: false,
-            })
-        );
-    });
-}
-
-#[test]
 fn save_and_load_creature_bond() {
     with_worker(|w| {
         let h = w.handle();
@@ -241,23 +218,6 @@ fn upsert_inventory_overwrites() {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].resource_kind, "Berry");
         assert_eq!(loaded[0].quantity, 99);
-    });
-}
-
-#[test]
-fn upsert_quest_progress_updates_in_place() {
-    with_worker(|w| {
-        let h = w.handle();
-
-        // First save.
-        h.save_quest_progress(6, 20, 0.3, false).unwrap();
-
-        // Idempotent second save (upsert — update).
-        h.save_quest_progress(6, 20, 1.0, true).unwrap();
-
-        let loaded = h.load_quest_progress(6, 20).unwrap().unwrap();
-        assert!((loaded.progress - 1.0).abs() < 1e-9);
-        assert!(loaded.completed);
     });
 }
 
@@ -401,14 +361,6 @@ fn worker_drop_shuts_down_cleanly() {
 // ---------------------------------------------------------------------------
 // 8.  Load non-existent rows returns None / empty
 // ---------------------------------------------------------------------------
-
-#[test]
-fn load_missing_quest_progress_returns_none() {
-    with_worker(|w| {
-        let loaded = w.handle().load_quest_progress(999, 999).unwrap();
-        assert_eq!(loaded, None);
-    });
-}
 
 #[test]
 fn load_missing_creature_bond_returns_none() {

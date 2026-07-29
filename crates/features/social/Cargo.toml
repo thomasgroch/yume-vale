@@ -11,7 +11,3 @@ lightyear = { workspace = true, features = ["replication"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 player = { workspace = true }
-tracing = { workspace = true }
-
-[dev-dependencies]
-serde_json.workspace = true

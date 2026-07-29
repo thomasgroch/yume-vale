@@ -138,7 +138,7 @@ pub fn handle_identity_hello(
             continue;
         }
 
-        for hello in receiver.receive() {
+        for hello in receiver.receive().take(1) {
             let cfg = server_config
                 .as_ref()
                 .map(|c| c.0.clone())

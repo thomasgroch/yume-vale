@@ -25,7 +25,6 @@ pub fn build_test_app() -> bevy::prelude::App {
     use game_core::world_config::{CreatureConfig, CreatureKind, WorldConfig};
     use game_protocol::ProtocolPlugin;
     use player::PlayerPlugin;
-    use quests::QuestPlugin;
 
     use social::SocialPlugin;
 
@@ -62,10 +61,7 @@ pub fn build_test_app() -> bevy::prelude::App {
                 model_path: "glim.glb".into(),
             },
         ],
-        quests: vec![],
     }));
-    // Add quest plugin with empty definitions (tests can override via app.world_mut())
-    app.add_plugins(QuestPlugin { quests: vec![] });
     // Spatial interest management
     app.init_resource::<systems::InterestSettings>();
     app.init_resource::<systems::VisibilityCache>();
@@ -83,16 +79,6 @@ pub fn build_test_app() -> bevy::prelude::App {
             systems::tick_player_cooldowns,
             systems::process_pending_transactions,
         )
-            .in_set(systems::ServerSystems),
-    );
-    // Quest systems (event handler is an observer registered in the plugin)
-    app.add_systems(
-        FixedUpdate,
-        (
-            quests::initialize_player_quests,
-            quests::persist_quest_progress,
-        )
-            .chain()
             .in_set(systems::ServerSystems),
     );
     // Resource node spawning (after world config is set)

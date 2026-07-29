@@ -77,7 +77,7 @@ PVC de 10Gi com `storageClassName: local-path`.
 
 ### ⚠  SEM BACKUP — RISCO DE PERDA TOTAL DE DADOS
 
-Este é um banco **single-node, sem replicação, sem backup automatizado**. O PVC contém todos os dados dos jogadores: identidades, inventários, progresso de missões, vínculos com criaturas, atribuições de terrenos e decorações.
+Este é um banco **single-node, sem replicação, sem backup automatizado**. O PVC contém todos os dados dos jogadores: identidades, inventários, vínculos com criaturas, atribuições de terrenos e decorações.
 
 **A perda do PVC resulta em perda total de todos os dados de save.**
 

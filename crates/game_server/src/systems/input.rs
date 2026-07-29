@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use game_core::math::Direction;
 use game_core::player_state::PlayerInput;
-use game_protocol::{ClientInput, InputAck, ReplicatedPlayerInput};
-use lightyear::prelude::{MessageReceiver, MessageSender};
+use game_protocol::{ClientInput, ReplicatedPlayerInput};
+use lightyear::prelude::MessageReceiver;
 use player::PlayerMovement;
 
 use super::connection::ClientPlayer;
@@ -28,24 +28,16 @@ pub fn apply_input_to_player(
     };
 }
 
-/// Reads `ClientInput` messages from connected clients, applies them
-/// to the corresponding player's movement and replicated input, and sends
-/// an `InputAck` back to the client with the last processed tick.
+/// Reads `ClientInput` messages from connected clients and applies them
+/// to the corresponding player's movement and replicated input.
 pub fn apply_client_input(
-    mut receivers: Query<(Entity, &mut MessageReceiver<ClientInput>, &ClientPlayer)>,
+    mut receivers: Query<(&mut MessageReceiver<ClientInput>, &ClientPlayer)>,
     mut players: Query<(&mut PlayerMovement, &mut ReplicatedPlayerInput)>,
-    mut ack_senders: Query<&mut MessageSender<InputAck>>,
 ) {
-    for (link_entity, mut receiver, info) in receivers.iter_mut() {
+    for (mut receiver, info) in receivers.iter_mut() {
         for ci in receiver.receive() {
             if let Ok((mut movement, mut rep_input)) = players.get_mut(info.player_entity) {
                 apply_input_to_player(&ci, &mut movement, &mut rep_input);
-                // Send InputAck for the processed tick
-                if let Ok(mut sender) = ack_senders.get_mut(link_entity) {
-                    sender.send::<game_protocol::channels::ReliableChannel>(InputAck {
-                        last_processed_tick: ci.tick,
-                    });
-                }
             }
         }
     }
@@ -122,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_input_to_player_chat_message_ignored() {
+    fn apply_input_without_movement_has_no_action() {
         let input = ClientInput {
             tick: 3,
             move_x: 0,

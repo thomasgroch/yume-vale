@@ -58,9 +58,6 @@ define_id!(
 define_id!(
     pub struct ItemId(pub u64);
 );
-define_id!(
-    pub struct QuestId(pub u64);
-);
 
 #[cfg(test)]
 mod tests {

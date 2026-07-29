@@ -1,4 +1,3 @@
-use bevy::gltf::GltfAssetLabel;
 use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use game_core::world_config::CreatureKind;
@@ -28,8 +27,8 @@ fn ground_offset(kind: CreatureKind) -> f32 {
 /// Handles for the two creature GLB models, loaded once at startup.
 #[derive(Resource, Clone)]
 pub struct CreatureAssets {
-    fluffball: Handle<WorldAsset>,
-    glimmerwing: Handle<WorldAsset>,
+    pub(crate) fluffball: Handle<WorldAsset>,
+    pub(crate) glimmerwing: Handle<WorldAsset>,
 }
 
 impl CreatureAssets {
@@ -52,16 +51,6 @@ pub struct CreatureVisual;
 // ---------------------------------------------------------------------------
 // Systems
 // ---------------------------------------------------------------------------
-
-/// Loads the two creature GLB models and inserts [`CreatureAssets`].
-pub fn load_creature_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.insert_resource(CreatureAssets {
-        fluffball: asset_server
-            .load(GltfAssetLabel::Scene(0).from_asset("models/creatures/fluffball.glb")),
-        glimmerwing: asset_server
-            .load(GltfAssetLabel::Scene(0).from_asset("models/creatures/glimmerwing.glb")),
-    });
-}
 
 type UnvisualizedCreatures<'w, 's> =
     Query<'w, 's, (Entity, &'static CreatureState), (With<Interpolated>, Without<CreatureVisual>)>;

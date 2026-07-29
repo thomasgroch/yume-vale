@@ -46,20 +46,4 @@
             model_path: "assets/models/creatures/glimmerwing.glb",
         ),
     ],
-    quests: [
-        (
-            id: (1),
-            title: "A Berry Good Start",
-            description: "Collect some berries for the village elder.",
-            objectives: [
-                (
-                    kind: Collect(Berry),
-                    target_quantity: 5,
-                ),
-            ],
-            rewards: [
-                Item(Resource(Fiber)),
-            ],
-        ),
-    ],
 )

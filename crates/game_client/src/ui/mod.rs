@@ -1,16 +1,13 @@
-//! UI design system: theme tokens, reusable widget builders, and social
-//! panels (chat, roster, group).
+//! UI design system: theme tokens, reusable widget builders, roster, and emotes.
 //!
 //! - [`theme`] — colour palette, spacing, radius, font-size tokens
 //! - [`widgets`] — builder functions for common UI patterns
-//! - [`social`] — client-side social state resources (chat, group, emotes)
-//! - [`chat`] — collapsible chat panel with text input
-//! - [`roster`] — connected-player/group panel with invite controls
+//! - [`social`] — client-side emote state
+//! - [`roster`] — connected-player count
 //!
 //! All UI screens (menu, HUD, touch overlays) import from here and never
 //! inline raw colour / dimension literals.
 
-pub mod chat;
 pub mod focus;
 pub mod roster;
 pub mod social;

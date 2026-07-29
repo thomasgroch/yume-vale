@@ -11,7 +11,6 @@ members = [
     "crates/features/social",
     "crates/features/resources",
     "crates/features/creatures",
-    "crates/features/quests",
     "apps/client",
     "apps/server",
     "apps/tools",
@@ -53,7 +52,6 @@ housing = { path = "crates/features/housing" }
 social = { path = "crates/features/social" }
 resources = { path = "crates/features/resources" }
 creatures = { path = "crates/features/creatures" }
-quests = { path = "crates/features/quests" }
 
 [profile.dev]
 opt-level = 1

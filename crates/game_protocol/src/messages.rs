@@ -93,55 +93,6 @@ pub struct ActionIntent {
 }
 
 // ---------------------------------------------------------------------------
-// Chat (reliable, bidirectional)
-// ---------------------------------------------------------------------------
-
-/// A chat message sent by a client.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ChatSend {
-    pub text: String,
-}
-
-/// A chat message forwarded by the server to all relevant clients.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ChatReceived {
-    pub from_player: u64,
-    pub text: String,
-}
-
-// ---------------------------------------------------------------------------
-// Groups (reliable, ClientToServer)
-// ---------------------------------------------------------------------------
-
-/// Invite another player to a group.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct GroupInvite {
-    pub target_player: u64,
-}
-
-/// Accept a pending group invitation.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct GroupAccept;
-
-/// Decline a pending group invitation.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct GroupDecline;
-
-/// Leave the current group.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct GroupLeave;
-
-// ---------------------------------------------------------------------------
-// Group state (reliable, ServerToClient)
-// ---------------------------------------------------------------------------
-
-/// Updated group member list sent to all group members.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct GroupUpdate {
-    pub members: Vec<u64>,
-}
-
-// ---------------------------------------------------------------------------
 // Emotes (reliable, ClientToServer)
 // ---------------------------------------------------------------------------
 
@@ -156,17 +107,6 @@ pub struct EmoteIntent {
 pub struct EmoteBroadcast {
     pub from_player: u64,
     pub emote: EmoteKind,
-}
-
-// ---------------------------------------------------------------------------
-// Input acknowledgement (reliable, ServerToClient)
-// ---------------------------------------------------------------------------
-
-/// Sent to each client periodically to confirm which tick the server has
-/// processed. Enables client-side prediction corrections.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct InputAck {
-    pub last_processed_tick: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -189,8 +129,8 @@ pub struct InventorySnapshot {
 
 /// Convert a `game_core::Inventory` into snapshot items.
 ///
-/// Shared by the collect, persistence, and quest systems so the slot→item
-/// projection lives in one place rather than three.
+/// Shared by collection and persistence so the slot-to-item projection stays
+/// in one place.
 pub fn inventory_to_snapshot_items(
     inventory: &game_core::inventory::Inventory,
 ) -> Vec<ItemSlotData> {
@@ -215,28 +155,6 @@ pub struct ActionRejected {
     pub sequence: u64,
     /// Human-readable reason for the rejection.
     pub reason: String,
-}
-
-/// Progress toward a single objective within a quest.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ObjectiveProgress {
-    pub objective_index: u8,
-    pub current: u32,
-    pub target: u32,
-}
-
-/// State of a single quest for a player.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct QuestStateData {
-    pub quest_id: u64,
-    pub completed: bool,
-    pub progress: Vec<ObjectiveProgress>,
-}
-
-/// Full quest state sent to a client.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct QuestSnapshot {
-    pub quests: Vec<QuestStateData>,
 }
 
 /// A social bond entry between two players.
@@ -411,73 +329,6 @@ mod tests {
         assert_eq!(orig, back);
     }
 
-    // --- Chat ---
-
-    #[test]
-    fn chat_send_serde_roundtrip() {
-        let orig = ChatSend {
-            text: "hello world".into(),
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: ChatSend = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    #[test]
-    fn chat_received_serde_roundtrip() {
-        let orig = ChatReceived {
-            from_player: 10,
-            text: "hi!".into(),
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: ChatReceived = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    // --- Group messages ---
-
-    #[test]
-    fn group_invite_serde_roundtrip() {
-        let orig = GroupInvite { target_player: 5 };
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: GroupInvite = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    #[test]
-    fn group_accept_serde_roundtrip() {
-        let orig = GroupAccept;
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: GroupAccept = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    #[test]
-    fn group_decline_serde_roundtrip() {
-        let orig = GroupDecline;
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: GroupDecline = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    #[test]
-    fn group_leave_serde_roundtrip() {
-        let orig = GroupLeave;
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: GroupLeave = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    #[test]
-    fn group_update_serde_roundtrip() {
-        let orig = GroupUpdate {
-            members: vec![1, 2, 3],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: GroupUpdate = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
     // --- EmoteIntent ---
 
     #[test]
@@ -503,18 +354,6 @@ mod tests {
         assert_eq!(orig, back);
     }
 
-    // --- InputAck ---
-
-    #[test]
-    fn input_ack_serde_roundtrip() {
-        let orig = InputAck {
-            last_processed_tick: 128,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: InputAck = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
     // --- InventorySnapshot ---
 
     #[test]
@@ -535,26 +374,6 @@ mod tests {
         };
         let json = serde_json::to_string(&orig).unwrap();
         let back: InventorySnapshot = serde_json::from_str(&json).unwrap();
-        assert_eq!(orig, back);
-    }
-
-    // --- QuestSnapshot ---
-
-    #[test]
-    fn quest_snapshot_serde_roundtrip() {
-        let orig = QuestSnapshot {
-            quests: vec![QuestStateData {
-                quest_id: 1,
-                completed: false,
-                progress: vec![ObjectiveProgress {
-                    objective_index: 0,
-                    current: 3,
-                    target: 5,
-                }],
-            }],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let back: QuestSnapshot = serde_json::from_str(&json).unwrap();
         assert_eq!(orig, back);
     }
 
@@ -664,19 +483,6 @@ mod tests {
                 target_id: None
             }
         );
-        let _ = format!("{:?}", ChatSend { text: "".into() });
-        let _ = format!(
-            "{:?}",
-            ChatReceived {
-                from_player: 0,
-                text: "".into()
-            }
-        );
-        let _ = format!("{:?}", GroupInvite { target_player: 0 });
-        let _ = format!("{:?}", GroupAccept);
-        let _ = format!("{:?}", GroupDecline);
-        let _ = format!("{:?}", GroupLeave);
-        let _ = format!("{:?}", GroupUpdate { members: vec![] });
         let _ = format!(
             "{:?}",
             EmoteIntent {
@@ -692,14 +498,7 @@ mod tests {
         );
         let _ = format!("{:?}", PlotBuildIntent { inventory_slot: 1 });
         let _ = format!("{:?}", PlotRemoveIntent);
-        let _ = format!(
-            "{:?}",
-            InputAck {
-                last_processed_tick: 0
-            }
-        );
         let _ = format!("{:?}", InventorySnapshot { items: vec![] });
-        let _ = format!("{:?}", QuestSnapshot { quests: vec![] });
         let _ = format!("{:?}", BondSnapshot { bonds: vec![] });
         let _ = format!("{:?}", PlotSnapshot { plots: vec![] });
         let _ = format!(

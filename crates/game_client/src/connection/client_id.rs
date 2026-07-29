@@ -1,13 +1,19 @@
-use bevy::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use bevy::log::error;
 
 /// Unique netcode client id per instance: the server drops connection requests
 /// with an already-connected id (anti-spoofing). On native, `YUME_CLIENT_ID` env
 /// overrides for tests. On wasm, a random id is generated via getrandom.
-pub(crate) fn derive_client_id() -> u64 {
+///
+/// Returns `None` on wasm if getrandom fails (e.g. insecure context). Callers
+/// must bail out — the connection cannot proceed without a valid client id.
+pub(crate) fn derive_client_id() -> Option<u64> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        client_id_from_env(std::env::var("YUME_CLIENT_ID").ok().as_deref())
-            .unwrap_or_else(time_based_client_id)
+        Some(
+            client_id_from_env(std::env::var("YUME_CLIENT_ID").ok().as_deref())
+                .unwrap_or_else(time_based_client_id),
+        )
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -42,11 +48,18 @@ fn time_based_client_id() -> u64 {
 }
 
 /// Wasm: random client id via getrandom (SystemTime and process::id unavailable).
+/// Returns `None` if the environment is not secure (insecure context blocks
+/// crypto.randomFillSync/getRandomValues).
 #[cfg(target_arch = "wasm32")]
-fn random_client_id() -> u64 {
+fn random_client_id() -> Option<u64> {
     let mut buf = [0u8; 8];
-    getrandom::fill(&mut buf).expect("getrandom failed to generate client id");
-    u64::from_le_bytes(buf).max(1)
+    match getrandom::fill(&mut buf) {
+        Ok(()) => Some(u64::from_le_bytes(buf).max(1)),
+        Err(e) => {
+            error!("getrandom failed to generate client id: {e}");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -101,7 +114,9 @@ mod tests {
 
     #[test]
     fn derive_client_id_returns_nonzero() {
-        let id = derive_client_id();
-        assert!(id > 0, "client id must be > 0");
+        assert!(
+            derive_client_id().is_some_and(|id| id > 0),
+            "client id must be > 0"
+        );
     }
 }

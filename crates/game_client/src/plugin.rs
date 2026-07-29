@@ -7,7 +7,7 @@ use game_protocol::ProtocolPlugin;
 use lightyear::prelude::client::ClientPlugins;
 use player::PlayerPlugin;
 
-use crate::arena::{load_arena_assets, spawn_arena};
+use crate::arena::spawn_arena;
 use crate::camera::{
     CameraOrbit, follow_local_player, rotate_camera_input, spawn_camera, spawn_ground,
     touch_camera_input, zoom_camera_input,
@@ -21,41 +21,29 @@ use crate::debug::{DebugMode, inspector_ui, toggle_debug_mode};
 use crate::decorations::spawn_decorations;
 use crate::flow::{self, AppFlow};
 use crate::hud::{
-    ClientActionFeedback, ClientCooldown, ClientInventory, ClientQuests, clear_action_feedback,
-    receive_action_rejected, receive_inventory_snapshot, receive_quest_snapshot, reconnect_button,
-    spawn_hud, spawn_inventory_panel, spawn_quest_panel, tick_cooldown, toggle_gameplay_panels,
-    update_hud_status, update_inventory_panel, update_quest_panel, update_version_text,
+    ClientActionFeedback, ClientCooldown, ClientInventory, clear_action_feedback,
+    receive_action_rejected, receive_inventory_snapshot, reconnect_button, spawn_hud,
+    spawn_inventory_panel, tick_cooldown, toggle_gameplay_panels, update_hud_status,
+    update_inventory_panel, update_version_text,
 };
 use crate::input::{InputState, gather_input};
+use crate::loading;
 use crate::menu::{play_button, play_button_hover, spawn_menu};
-use crate::prediction::{
-    InputHistory, LastProcessedTick, mark_local_predicted, predict_movement, reconcile_on_ack,
-};
 use crate::touch::{
     TouchDetected, TouchJump, detect_touch, jump_button_input, spawn_touch_ui, touch_ui_visibility,
     update_joystick_ui,
 };
 use crate::ui::{
-    chat::{
-        ChatInputState, process_chat_input, spawn_chat_panel, toggle_chat_focus, update_chat_panel,
-    },
     focus::{FocusState, clear_stale_focus, manage_focus},
-    roster::{
-        handle_accept_button, handle_decline_button, handle_leave_button, spawn_roster_panel,
-        update_roster_panel,
-    },
-    social::{
-        ClientChat, ClientEmote, ClientGroup, receive_chat_received, receive_emote_broadcast,
-        receive_group_update,
-    },
+    roster::{spawn_roster_panel, update_roster_panel},
+    social::{ClientEmote, receive_emote_broadcast},
 };
 use crate::visuals::{
     BuildMode, ClientBonds, animate_foxes, attach_creature_visuals, attach_decoration_visuals,
     attach_player_visuals, build_controls_ui, handle_action_rejected, handle_bond_snapshot,
-    load_creature_assets, load_fox_assets, mark_local_player_visuals, send_wave_emote,
-    setup_fox_animators, show_bond_display, show_feed_prompt, spawn_plot_boundaries,
-    sync_position_to_transform, toggle_build_mode, trigger_wave_from_emote,
-    update_plot_owner_indicators,
+    mark_local_player_visuals, send_wave_emote, setup_fox_animators, show_bond_display,
+    show_feed_prompt, spawn_plot_boundaries, sync_position_to_transform, toggle_build_mode,
+    trigger_wave_from_emote, update_plot_owner_indicators,
 };
 
 #[derive(Default)]
@@ -76,20 +64,14 @@ impl Plugin for ClientPlugin {
 
         app.insert_resource(self.config.clone());
         app.init_resource::<InputState>();
-        app.init_resource::<InputHistory>();
-        app.init_resource::<LastProcessedTick>();
         app.init_resource::<LocalPlayerId>();
         app.init_resource::<CameraOrbit>();
         app.init_resource::<BuildMode>();
         app.init_resource::<ClientBonds>();
         app.init_resource::<ClientInventory>();
-        app.init_resource::<ClientQuests>();
         app.init_resource::<ClientCooldown>();
         app.init_resource::<ClientActionFeedback>();
-        app.init_resource::<ClientChat>();
-        app.init_resource::<ClientGroup>();
         app.init_resource::<ClientEmote>();
-        app.init_resource::<ChatInputState>();
 
         // Identity persistence
         {
@@ -104,46 +86,26 @@ impl Plugin for ClientPlugin {
 
         // ── State machine ─────────────────────────────────────────────────
         app.init_state::<AppFlow>();
+        configure_loading_flow(app);
 
-        // Loading: parse config, load assets
-        app.add_systems(
-            OnEnter(AppFlow::Loading),
-            (
-                flow::load_world_config,
-                flow::load_game_assets,
-                load_fox_assets,
-                load_creature_assets,
-                load_arena_assets,
-            ),
-        );
-        app.add_systems(
-            Update,
-            (flow::check_assets_loaded, flow::update_loading_progress)
-                .run_if(in_state(AppFlow::Loading)),
-        );
-
-        // Menu: show title screen
-        app.add_systems(OnEnter(AppFlow::Menu), spawn_menu);
+        // Menu: show title screen and spawn arena
+        app.add_systems(OnEnter(AppFlow::Menu), (spawn_menu, spawn_arena));
         app.add_systems(OnExit(AppFlow::Menu), flow::despawn_menu);
 
         // InGame: systems that run during gameplay
         app.add_systems(OnExit(AppFlow::InGame), flow::despawn_ingame);
 
-        // Spawn persistent entities at startup (loading screen, camera, world)
+        // Spawn persistent entities at startup (camera, world)
         app.add_systems(
             Startup,
             (
-                flow::spawn_loading_ui,
                 spawn_camera,
                 spawn_ground,
                 spawn_decorations,
                 spawn_hud,
-                spawn_arena,
                 spawn_touch_ui,
                 spawn_plot_boundaries,
                 spawn_inventory_panel,
-                spawn_quest_panel,
-                spawn_chat_panel,
                 spawn_roster_panel,
             )
                 .chain(),
@@ -158,15 +120,11 @@ impl Plugin for ClientPlugin {
                 attach_player_visuals,
                 setup_fox_animators,
                 mark_local_player_visuals,
-                mark_local_predicted,
                 attach_creature_visuals,
                 attach_decoration_visuals,
                 toggle_build_mode,
-                toggle_chat_focus,
-                process_chat_input,
                 send_wave_emote,
                 gather_input,
-                predict_movement,
                 rotate_camera_input,
                 zoom_camera_input,
                 touch_camera_input,
@@ -179,12 +137,8 @@ impl Plugin for ClientPlugin {
                 handle_bond_snapshot,
                 handle_action_rejected,
                 receive_inventory_snapshot,
-                receive_quest_snapshot,
                 receive_action_rejected,
-                receive_chat_received,
-                receive_group_update,
                 receive_emote_broadcast,
-                reconcile_on_ack,
                 tick_cooldown,
                 clear_action_feedback,
                 trigger_wave_from_emote,
@@ -211,16 +165,7 @@ impl Plugin for ClientPlugin {
         );
         app.add_systems(
             Update,
-            (
-                update_inventory_panel,
-                update_quest_panel,
-                update_chat_panel,
-                update_roster_panel,
-                handle_accept_button,
-                handle_decline_button,
-                handle_leave_button,
-            )
-                .run_if(in_state(AppFlow::InGame)),
+            (update_inventory_panel, update_roster_panel).run_if(in_state(AppFlow::InGame)),
         );
         app.add_systems(
             Update,
@@ -246,32 +191,22 @@ impl Plugin for ClientPlugin {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_plugin_has_default_config() {
-        let plugin = ClientPlugin::default();
-        assert_eq!(plugin.config.server_addr, "127.0.0.1:5000");
-    }
-
-    #[test]
-    fn custom_plugin_config() {
-        let plugin = ClientPlugin {
-            config: ClientConfig {
-                server_addr: "192.168.1.100:8080".into(),
-                player_name: "Yume".into(),
-                ..Default::default()
-            },
-        };
-        assert_eq!(plugin.config.server_addr, "192.168.1.100:8080");
-    }
-
-    #[test]
-    fn client_config_defaults() {
-        let cfg = ClientConfig::default();
-        assert_eq!(cfg.server_addr, "127.0.0.1:5000");
-        assert_eq!(cfg.player_name, "Player");
-    }
+fn configure_loading_flow(app: &mut App) {
+    app.add_systems(
+        OnEnter(AppFlow::Loading),
+        (
+            flow::load_world_config,
+            loading::create_loading_queue,
+            flow::spawn_loading_ui,
+        )
+            .chain(),
+    );
+    app.add_systems(
+        Update,
+        (loading::poll_and_finalize, flow::update_loading_progress)
+            .run_if(in_state(AppFlow::Loading)),
+    );
+    app.add_systems(OnExit(AppFlow::Loading), flow::despawn_loading_ui);
 }
+#[cfg(test)]
+mod tests;

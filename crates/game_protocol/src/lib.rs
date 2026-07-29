@@ -3,7 +3,7 @@ pub mod components;
 pub mod messages;
 pub mod protocol;
 
-pub const PROTOCOL_ID: u64 = 0x59c3_7a6f;
+pub const PROTOCOL_ID: u64 = 0x59c3_7a72;
 pub const PRIVATE_KEY: [u8; 32] = *b"yume-vale-dev-key-00000000000000";
 
 pub use channels::*;
@@ -54,11 +54,6 @@ mod tests {
         let app = test_app();
         assert!(app.is_message_registered::<IdentityHello>());
         assert!(app.is_message_registered::<ActionIntent>());
-        assert!(app.is_message_registered::<ChatSend>());
-        assert!(app.is_message_registered::<GroupInvite>());
-        assert!(app.is_message_registered::<GroupAccept>());
-        assert!(app.is_message_registered::<GroupDecline>());
-        assert!(app.is_message_registered::<GroupLeave>());
         assert!(app.is_message_registered::<EmoteIntent>());
         assert!(app.is_message_registered::<PlotBuildIntent>());
         assert!(app.is_message_registered::<PlotRemoveIntent>());
@@ -69,12 +64,8 @@ mod tests {
         let app = test_app();
         assert!(app.is_message_registered::<Welcome>());
         assert!(app.is_message_registered::<ConnectionRejected>());
-        assert!(app.is_message_registered::<ChatReceived>());
-        assert!(app.is_message_registered::<GroupUpdate>());
         assert!(app.is_message_registered::<EmoteBroadcast>());
-        assert!(app.is_message_registered::<InputAck>());
         assert!(app.is_message_registered::<InventorySnapshot>());
-        assert!(app.is_message_registered::<QuestSnapshot>());
         assert!(app.is_message_registered::<BondSnapshot>());
         assert!(app.is_message_registered::<PlotSnapshot>());
     }
@@ -133,11 +124,6 @@ mod tests {
         assert!(app.is_message_registered::<ClientInput>());
         assert!(app.is_message_registered::<IdentityHello>());
         assert!(app.is_message_registered::<ActionIntent>());
-        assert!(app.is_message_registered::<ChatSend>());
-        assert!(app.is_message_registered::<GroupInvite>());
-        assert!(app.is_message_registered::<GroupAccept>());
-        assert!(app.is_message_registered::<GroupDecline>());
-        assert!(app.is_message_registered::<GroupLeave>());
         assert!(app.is_message_registered::<EmoteIntent>());
     }
 
@@ -147,12 +133,8 @@ mod tests {
         // All server-to-client message types
         assert!(app.is_message_registered::<Welcome>());
         assert!(app.is_message_registered::<ConnectionRejected>());
-        assert!(app.is_message_registered::<ChatReceived>());
-        assert!(app.is_message_registered::<GroupUpdate>());
         assert!(app.is_message_registered::<EmoteBroadcast>());
-        assert!(app.is_message_registered::<InputAck>());
         assert!(app.is_message_registered::<InventorySnapshot>());
-        assert!(app.is_message_registered::<QuestSnapshot>());
         assert!(app.is_message_registered::<BondSnapshot>());
         assert!(app.is_message_registered::<PlotSnapshot>());
     }

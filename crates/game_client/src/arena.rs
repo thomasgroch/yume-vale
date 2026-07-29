@@ -1,4 +1,3 @@
-use bevy::gltf::GltfAssetLabel;
 use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use game_core::arena::{ArenaModel, arena_layout};
@@ -6,18 +5,12 @@ use game_core::arena::{ArenaModel, arena_layout};
 /// Handles to all six arena GLB models, loaded once at startup.
 #[derive(Resource, Clone)]
 pub struct ArenaAssets {
-    /// The portal model handle.
-    portal: Handle<WorldAsset>,
-    /// The wall model handle.
-    wall: Handle<WorldAsset>,
-    /// The pillar model handle.
-    pillar: Handle<WorldAsset>,
-    /// The large crystal model handle.
-    crystal_big: Handle<WorldAsset>,
-    /// The small crystal model handle.
-    pub crystal_small: Handle<WorldAsset>,
-    /// The rock model handle.
-    rock: Handle<WorldAsset>,
+    pub(crate) portal: Handle<WorldAsset>,
+    pub(crate) wall: Handle<WorldAsset>,
+    pub(crate) pillar: Handle<WorldAsset>,
+    pub(crate) crystal_big: Handle<WorldAsset>,
+    pub(crate) crystal_small: Handle<WorldAsset>,
+    pub(crate) rock: Handle<WorldAsset>,
 }
 
 impl ArenaAssets {
@@ -48,31 +41,14 @@ fn y_offset(model: ArenaModel) -> f32 {
     }
 }
 
-/// Loads the six arena GLB scene models via the asset server and inserts
-/// [`ArenaAssets`] as a resource. Should run before [`spawn_arena`] in the
-/// Startup schedule (chain them to flush deferred commands in between).
-pub fn load_arena_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let load = |model: ArenaModel| -> Handle<WorldAsset> {
-        asset_server.load(GltfAssetLabel::Scene(0).from_asset(model.asset_path()))
-    };
-
-    commands.insert_resource(ArenaAssets {
-        portal: load(ArenaModel::Portal),
-        wall: load(ArenaModel::Wall),
-        pillar: load(ArenaModel::Pillar),
-        crystal_big: load(ArenaModel::CrystalBig),
-        crystal_small: load(ArenaModel::CrystalSmall),
-        rock: load(ArenaModel::Rock),
-    });
-}
-
 /// Spawns the arena floor disc and all props from [`arena_layout`].
 ///
 /// The floor is a flat stone-coloured cylinder centred at the origin.
 /// Each prop receives its model's scene handle, position, yaw rotation,
 /// and uniform scale from the layout definition.
 ///
-/// Must run after [`load_arena_assets`] so [`ArenaAssets`] is available.
+/// [`ArenaAssets`] must exist when this system runs (guaranteed by the
+/// sequential loader finalization in `OnEnter(Menu)`).
 pub fn spawn_arena(
     mut commands: Commands,
     assets: Res<ArenaAssets>,

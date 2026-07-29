@@ -48,7 +48,6 @@ fn resource_test_config() -> WorldConfig {
             model_path: "wood.glb".into(),
         }],
         creatures: vec![],
-        quests: vec![],
     }
 }
 

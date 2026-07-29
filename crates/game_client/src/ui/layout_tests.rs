@@ -21,14 +21,11 @@ use bevy::window::Window;
 
 use crate::flow::AppFlow;
 use crate::hud::{
-    ClientActionFeedback, ClientCooldown, ClientInventory, ClientQuests, GameplayPanel,
-    spawn_inventory_panel, spawn_quest_panel,
+    ClientActionFeedback, ClientCooldown, ClientInventory, GameplayPanel, spawn_inventory_panel,
 };
 use crate::touch::{JumpButton, TouchDetected, TouchJump, spawn_touch_ui};
 use crate::ui::{
-    chat::{ChatInputState, ChatPanel, spawn_chat_panel},
     roster::{RosterPanel, spawn_roster_panel},
-    social::ClientChat,
     theme,
 };
 use crate::visuals::bond::{BondDisplay, FeedPrompt};
@@ -100,11 +97,8 @@ fn layout_app(width: f32, height: f32) -> App {
     app.add_plugins(bevy::state::app::StatesPlugin);
     app.init_state::<AppFlow>();
     app.init_resource::<ClientInventory>();
-    app.init_resource::<ClientQuests>();
     app.init_resource::<ClientCooldown>();
     app.init_resource::<ClientActionFeedback>();
-    app.init_resource::<ClientChat>();
-    app.init_resource::<ChatInputState>();
     app.init_resource::<ClientBonds>();
     app.init_resource::<BuildMode>();
     app.init_resource::<TouchJump>();
@@ -130,13 +124,7 @@ fn layout_app(width: f32, height: f32) -> App {
     // Spawn actual panels
     app.add_systems(
         Startup,
-        (
-            spawn_inventory_panel,
-            spawn_quest_panel,
-            spawn_chat_panel,
-            spawn_roster_panel,
-            spawn_touch_ui,
-        ),
+        (spawn_inventory_panel, spawn_roster_panel, spawn_touch_ui),
     );
     app.update();
 
@@ -259,14 +247,6 @@ fn collect_panel_rects(app: &mut App, vw: f32, vh: f32) -> Vec<(&'static str, Re
     let mut q = world.query_filtered::<&Node, With<crate::hud::InventoryPanel>>();
     if let Ok(node) = q.single(world) {
         rects.push(("Inventory", node_rect(node, vw, vh)));
-    }
-    let mut q = world.query_filtered::<&Node, With<crate::hud::QuestPanel>>();
-    if let Ok(node) = q.single(world) {
-        rects.push(("Quest", node_rect(node, vw, vh)));
-    }
-    let mut q = world.query_filtered::<&Node, With<ChatPanel>>();
-    if let Ok(node) = q.single(world) {
-        rects.push(("Chat", node_rect(node, vw, vh)));
     }
     let mut q = world.query_filtered::<&Node, With<RosterPanel>>();
     if let Ok(node) = q.single(world) {
@@ -413,8 +393,8 @@ fn no_duplicate_corner_anchors() {
             "[{label}] {top_left} panels at top-left (status+roster max 2)"
         );
         assert!(
-            top_right <= 2,
-            "[{label}] {top_right} panels at top-right (quest+bond max 2)"
+            top_right <= 1,
+            "[{label}] {top_right} panels at top-right (bond max 1)"
         );
         assert!(
             bottom_left <= 2,

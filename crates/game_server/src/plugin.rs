@@ -8,7 +8,6 @@ use game_protocol::ProtocolPlugin;
 use housing::ServerHousingPlugin;
 use housing::components::HousingPlayer;
 use player::{PlayerPlugin, YumeScheme};
-use quests::QuestPlugin;
 use social::SocialPlugin;
 
 use crate::config::ServerConfig;
@@ -73,9 +72,7 @@ impl Plugin for ServerPlugin {
         let world_config_ron = include_str!("../../../assets/world.ron");
         match game_core::world_config::WorldConfig::from_str(world_config_ron) {
             Ok(wc) => {
-                let quest_defs = wc.quests.clone();
                 app.insert_resource(WorldConfigResource(wc));
-                app.add_plugins(QuestPlugin { quests: quest_defs });
             }
             Err(e) => {
                 tracing::error!("Failed to parse world.ron: {e}");
@@ -118,17 +115,6 @@ impl Plugin for ServerPlugin {
                 tick_resource_respawn,
                 process_pending_transactions,
             )
-                .in_set(ServerSystems),
-        );
-
-        // Quest systems (initialization before events, persistence after)
-        app.add_systems(
-            FixedUpdate,
-            (
-                quests::initialize_player_quests,
-                quests::persist_quest_progress,
-            )
-                .chain()
                 .in_set(ServerSystems),
         );
 

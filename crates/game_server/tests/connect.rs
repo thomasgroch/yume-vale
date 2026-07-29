@@ -4,6 +4,9 @@ mod support;
 use support::*;
 
 use bevy::prelude::*;
+use game_protocol::channels::ReliableChannel;
+use game_protocol::{IdentityHello, PROTOCOL_ID};
+use game_server::systems::NextPlayerColor;
 use lightyear::connection::client::Connect;
 use lightyear::crossbeam::CrossbeamIo;
 use lightyear::prelude::client::RawClient;
@@ -99,5 +102,46 @@ fn reconnect_same_id_leaves_single_player() {
     assert!(
         ok,
         "reconnect should produce exactly 1 player (stale despawned)"
+    );
+}
+
+#[test]
+fn duplicate_identity_hello_produces_one_player() {
+    let mut server = server_app();
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 20002);
+
+    // Let connection establish so client has MessageSender<IdentityHello>.
+    step(&mut server, &mut client, 10);
+
+    // Enqueue three identical IdentityHellos without stepping between them.
+    // They all arrive at the server receive buffer before one FixedUpdate.
+    let mut q = client
+        .world_mut()
+        .query::<&mut MessageSender<IdentityHello>>();
+    let mut sender = q
+        .iter_mut(client.world_mut())
+        .next()
+        .expect("client has MessageSender after connection");
+    let hello = IdentityHello {
+        protocol_version: PROTOCOL_ID as u32,
+        token: String::new(),
+    };
+    sender.send::<ReliableChannel>(hello.clone());
+    sender.send::<ReliableChannel>(hello.clone());
+    sender.send::<ReliableChannel>(hello);
+
+    // Step far enough for auth, replication to settle.
+    step(&mut server, &mut client, 50);
+
+    assert_eq!(
+        server_player_count(&mut server),
+        1,
+        "duplicate IdentityHellos must not produce duplicate players"
+    );
+    assert_eq!(
+        server.world().resource::<NextPlayerColor>().0,
+        1,
+        "NextPlayerColor must advance exactly once"
     );
 }
