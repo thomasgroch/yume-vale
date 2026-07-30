@@ -11,7 +11,7 @@ fn main() {
     App::new()
         .add_plugins(
             MinimalPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(
-                std::time::Duration::from_secs_f64(1.0 / 30.0),
+                std::time::Duration::from_secs_f64(1.0 / 60.0),
             )),
         )
         .add_plugins(bevy::state::app::StatesPlugin)
