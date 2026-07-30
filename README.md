@@ -51,5 +51,6 @@ docs/      deploy, planejamento, screenshots
 
 - [AGENTS.md](AGENTS.md) — guia para agentes: comandos, mapa do código, invariantes
 - [docs/deploy.md](docs/deploy.md) — pipeline CI/CD, k3s, Argo CD, ingress, variáveis de ambiente
+- [docs/networking.md](docs/networking.md) — blueprint de rede: transporte, protocolo, replicação, tickrate
 - [yume-vale-plan.md](yume-vale-plan.md) — plano de desenvolvimento (visão + estado atual)
 - [docs/gamedev-AI-first.md](docs/gamedev-AI-first.md) — filosofia da stack

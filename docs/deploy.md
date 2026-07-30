@@ -24,15 +24,15 @@ O pin do sha é necessário porque `:latest` nunca muda o manifest — sem diff 
 
 | Imagem | Base final | Conteúdo |
 |---|---|---|
-| `yume-vale-server` | distroless-ish (binário server) | game server headless, 4 listeners |
+| `yume-vale-server` | distroless-ish (binário server) | game server headless, 3 listeners |
 | `yume-vale-client` | `nginx:1-alpine` | wasm release (trunk) + assets estáticos |
 
 Notas do build do cliente (`Dockerfile.client`):
 
 - `trunk build --release` com `CARGO_BUILD_JOBS=2` (LTO + wasm-opt estouravam 8GB de RAM)
 - **Shim de wasm-opt**: trunk roda wasm-opt v123 sem feature flags, mas o wasm usa bulk-memory (padrão Rust ≥ 1.87) — um shim em `/usr/local/bin/wasm-opt` chama binaryen v131 com `--enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext` e força `-Oz`
-- `certs/digest.txt` é criado com conteúdo dummy no build (o `include_str!` do digest WT exige o arquivo; produção conecta via WS e nunca usa WT)
-- `ARG YUME_SERVER_WS_URL` — embutida no wasm em compile time (`option_env!`); vazio = o cliente deriva `wss://{host}/ws` do host da página (ver `crates/game_client/src/connection.rs`)
+- `certs/digest.txt` é criado com conteúdo dummy no build (o `include_str!` do digest WT exige o arquivo; produção tenta WT com digest vazio → CA normal do browser, cai para WSS após 8s)
+- `ARG YUME_SERVER_WS_URL` — embutida no wasm em compile time (`option_env!`); vazio = host da página em WT:5001 primeiro, com fallback `wss://{host}/ws` (ver `crates/game_client/src/connection/`)
 - Texturas em WebP (o `nginx.conf` usa o `mime.types` padrão do nginx — um bloco `types` custom quebrou o HTML uma vez; não reintroduzir)
 
 ## Rede / portas
