@@ -1,39 +1,11 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
-use game_core::arena::{ArenaColliderShape, arena_layout};
-use game_core::constants::RUN_SPEED;
-use game_core::decorations::{DecorationKind, decoration_layout};
 use lightyear::prelude::*;
-use player::scheme::YumeSchemeConfig;
+use player::spawn_static_world_colliders;
 // WorldConfigResource is defined below in this module
 
 use super::connection::ServerConfigResource;
-
-/// Shared handle to the Tnua walk configuration (speed = `RUN_SPEED`; walking
-/// is fed as a fraction of it via `desired_motion`).
-#[derive(Resource, Clone)]
-pub struct WalkConfig(pub Handle<YumeSchemeConfig>);
-
-impl FromWorld for WalkConfig {
-    fn from_world(world: &mut World) -> Self {
-        world.init_resource::<Assets<YumeSchemeConfig>>();
-        let mut configs = world.resource_mut::<Assets<YumeSchemeConfig>>();
-        Self(configs.add(YumeSchemeConfig {
-            basis: TnuaBuiltinWalkConfig {
-                speed: RUN_SPEED,
-                float_height: 0.6,
-                acceleration: 40.0,
-                air_acceleration: 10.0,
-                ..default()
-            },
-            jump: TnuaBuiltinJumpConfig {
-                height: 1.5,
-                ..default()
-            },
-        }))
-    }
-}
 
 /// Wraps a `WorldConfig` as a Bevy resource.
 #[derive(Resource, Clone)]
@@ -48,7 +20,7 @@ pub fn setup_world(
     world_config: Option<Res<WorldConfigResource>>,
     creature_query: Query<Entity, Added<creatures::Creature>>,
 ) {
-    commands.spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
+    spawn_static_world_colliders(&mut commands);
 
     // Spawn creatures from world config
     if let Some(config) = world_config {
@@ -67,47 +39,6 @@ pub fn setup_world(
         ));
     }
 
-    for prop in arena_layout() {
-        let rot = Quat::from_rotation_y(prop.yaw);
-        for collider in prop.colliders {
-            let world_pos = prop.translation + rot * collider.offset;
-            let shape = match collider.shape {
-                ArenaColliderShape::Cuboid { half_extents } => {
-                    Collider::cuboid(half_extents.x, half_extents.y, half_extents.z)
-                }
-                ArenaColliderShape::Cylinder {
-                    radius,
-                    half_height,
-                } => Collider::cylinder(radius, half_height),
-            };
-            commands.spawn((
-                RigidBody::Static,
-                shape,
-                Transform::from_translation(world_pos).with_rotation(rot),
-            ));
-        }
-    }
-
-    for prop in decoration_layout() {
-        let (x, z) = (prop.position.x, prop.position.z);
-        match prop.kind {
-            DecorationKind::Tree => {
-                commands.spawn((
-                    RigidBody::Static,
-                    Collider::cylinder(0.25, 0.8),
-                    Transform::from_translation(Vec3::new(x, 0.8, z)),
-                ));
-            }
-            DecorationKind::Rock(s) => {
-                commands.spawn((
-                    RigidBody::Static,
-                    Collider::sphere(0.6 * s),
-                    Transform::from_translation(Vec3::new(x, 0.3 * s, z)),
-                ));
-            }
-            DecorationKind::Flower => {}
-        }
-    }
 }
 
 /// Spawns the Lightyear server entities (UDP, WebTransport, WebSocket) and starts them.

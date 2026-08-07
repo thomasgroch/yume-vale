@@ -16,6 +16,7 @@
 
 use bevy::prelude::*;
 use core::time::Duration;
+use game_protocol::RejectionKind;
 
 /// How long we wait for WebTransport to connect before falling back to WS.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -57,6 +58,7 @@ pub(crate) struct TransportState {
     /// (application-layer rejection, not transport failure).
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) rejection_received: bool,
+    pub(crate) rejection_reason: Option<RejectionKind>,
     /// Page hostname for URL construction (wasm only).
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) page_host: Option<String>,
@@ -78,9 +80,10 @@ pub(crate) struct TransportState {
 impl Default for TransportState {
     fn default() -> Self {
         Self {
-            mode: TransportMode::default(),
+            mode: select_transport_mode(false, true),
             wt_start: None,
             rejection_received: false,
+            rejection_reason: None,
             page_host: None,
             page_https: false,
             page_is_local: true,
@@ -120,12 +123,10 @@ impl TransportState {
             .map(|h| h == "localhost" || h == "127.0.0.1" || h == "[::1]")
             .unwrap_or(true);
         let explicit_ws_override = query.contains("transport=ws");
-
-        let mode = if explicit_ws_override {
-            TransportMode::WebSocket
-        } else {
-            TransportMode::WebTransport
-        };
+        let wt_available = window.as_ref().is_some_and(|window| {
+            js_sys::Reflect::has(window.as_ref(), &"WebTransport".into()).unwrap_or(false)
+        });
+        let mode = select_transport_mode(explicit_ws_override, wt_available);
 
         Self {
             mode,
@@ -143,6 +144,17 @@ impl TransportState {
         self.wt_start = Some(now);
     }
 
+    pub(crate) fn reject(&mut self, reason: RejectionKind) {
+        self.rejection_received = true;
+        self.rejection_reason = Some(reason);
+        self.wt_start = None;
+    }
+
+    pub(crate) fn reset_rejection(&mut self) {
+        self.rejection_received = false;
+        self.rejection_reason = None;
+    }
+
     /// Returns the production WSS URL (`wss://{host}/ws`) if applicable.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) fn prod_wss_url(&self) -> Option<String> {
@@ -151,6 +163,17 @@ impl TransportState {
         } else {
             None
         }
+    }
+}
+
+pub(crate) fn select_transport_mode(
+    explicit_ws_override: bool,
+    wt_available: bool,
+) -> TransportMode {
+    if explicit_ws_override || !wt_available {
+        TransportMode::WebSocket
+    } else {
+        TransportMode::WebTransport
     }
 }
 

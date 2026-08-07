@@ -1,6 +1,7 @@
 //! Tests for transport fallback state machine.
 
 use super::*;
+use game_protocol::RejectionKind;
 
 // ── TransportMode ──────────────────────────────────────────────
 
@@ -25,6 +26,35 @@ fn transport_state_default() {
     assert!(!s.rejection_received);
     assert!(!s.explicit_ws_override);
     assert!(s.page_is_local);
+    assert!(s.rejection_reason.is_none());
+}
+
+#[test]
+fn transport_selection_skips_wt_when_api_is_absent() {
+    assert_eq!(
+        select_transport_mode(false, false),
+        TransportMode::WebSocket
+    );
+    assert_eq!(
+        select_transport_mode(false, true),
+        TransportMode::WebTransport
+    );
+    assert_eq!(select_transport_mode(true, true), TransportMode::WebSocket);
+}
+
+#[test]
+fn rejection_state_blocks_transport_until_reset() {
+    let mut state = TransportState::default();
+    state.reject(RejectionKind::ServerFull);
+
+    assert!(state.rejection_received);
+    assert_eq!(state.rejection_reason, Some(RejectionKind::ServerFull));
+    assert!(state.wt_start.is_none());
+    assert!(!should_try_wt(state.mode, state.rejection_received));
+
+    state.reset_rejection();
+    assert!(!state.rejection_received);
+    assert!(state.rejection_reason.is_none());
 }
 
 #[test]

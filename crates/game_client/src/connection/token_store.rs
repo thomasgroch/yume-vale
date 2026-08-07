@@ -53,7 +53,6 @@ pub fn save_identity_token(token: &str) {
 }
 
 /// Clear the stored identity token (e.g. on rejection or explicit logout).
-#[allow(dead_code)]
 pub fn clear_identity_token() {
     save_identity_token("");
 }

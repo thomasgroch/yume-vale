@@ -12,8 +12,8 @@ RUN printf '#!/bin/sh\nexec /opt/binaryen-version_131/bin/wasm-opt --enable-bulk
     > /usr/local/bin/wasm-opt && chmod +x /usr/local/bin/wasm-opt
 WORKDIR /app
 COPY . .
-# certs/ is gitignored (dev-only); the WT digest include_str! needs a file to
-# compile, but the deploy connects via YUME_SERVER_WS_URL and never uses WT.
+# certs/ is gitignored (dev-only); the local WT digest include_str! needs a
+# placeholder, while production uses CA validation and falls back to WSS.
 RUN mkdir -p certs && echo 00 > certs/digest.txt
 # Baked into the wasm at compile time (option_env!); empty = derive from page host.
 ARG YUME_SERVER_WS_URL=""

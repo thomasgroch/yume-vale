@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::config::ClientConfig;
 use crate::connection::{TransportState, start_connection};
 use crate::flow::AppFlow;
+use crate::graphics::{GraphicsQualityLabel, GraphicsToggleButton, LABEL_HIGH};
 use crate::ui::{theme, widgets};
 
 #[derive(Component)]
@@ -55,6 +56,24 @@ pub fn spawn_menu(mut commands: Commands) {
                     Text::new("Jogar"),
                     widgets::text_font(theme::FONT_XL),
                     TextColor(Color::WHITE),
+                ));
+            });
+            root.spawn((
+                GraphicsToggleButton,
+                Button,
+                Node {
+                    margin: UiRect::top(Val::Px(theme::SPACE_16)),
+                    min_height: Val::Px(theme::MIN_TOUCH_TARGET),
+                    ..widgets::button_frame(theme::SPACE_24, theme::SPACE_14)
+                },
+                BackgroundColor(theme::BUBBLE_BLUE),
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    GraphicsQualityLabel,
+                    Text::new(LABEL_HIGH),
+                    widgets::text_font(theme::FONT_MD),
+                    TextColor(theme::TEXT_SUBTLE),
                 ));
             });
             root.spawn((
@@ -113,6 +132,31 @@ mod tests {
 
     use crate::config::build_client_config;
     use crate::flow;
+
+    #[test]
+    fn menu_spawns_graphics_toggle_button() {
+        use crate::graphics::{GraphicsQuality, GraphicsToggleButton};
+
+        let mut app = menu_app();
+        app.update();
+
+        let mut buttons = app
+            .world_mut()
+            .query_filtered::<(&Node, Entity), With<GraphicsToggleButton>>();
+        let (node, _) = buttons.single(app.world()).unwrap();
+        assert_eq!(
+            node.min_height,
+            Val::Px(crate::ui::theme::MIN_TOUCH_TARGET),
+            "toggle target must be >= 44px"
+        );
+
+        let mut texts = app.world_mut().query::<&Text>();
+        let all: Vec<String> = texts.iter(app.world()).map(|t| t.0.clone()).collect();
+        assert!(
+            all.iter().any(|t| t == GraphicsQuality::High.label()),
+            "button must start at 'Gráficos: Alto'"
+        );
+    }
 
     fn menu_app() -> App {
         let mut app = App::new();

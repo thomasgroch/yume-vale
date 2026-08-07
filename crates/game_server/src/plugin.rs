@@ -1,13 +1,13 @@
 use avian3d::prelude::*;
+use bevy::app::PluginGroup;
 use bevy::prelude::*;
-use bevy_tnua::prelude::*;
-use bevy_tnua_avian3d::prelude::*;
 use core::time::Duration;
 use creatures::CreaturePlugin;
 use game_protocol::ProtocolPlugin;
 use housing::ServerHousingPlugin;
 use housing::components::HousingPlayer;
-use player::{PlayerPlugin, YumeScheme};
+use lightyear::avian3d::plugin::{AvianReplicationMode, LightyearAvianPlugin};
+use player::PlayerPlugin;
 use social::SocialPlugin;
 
 use crate::config::ServerConfig;
@@ -27,11 +27,17 @@ impl Plugin for ServerPlugin {
 
         app.add_plugins(lightyear::prelude::server::ServerPlugins { tick_duration });
 
-        app.add_plugins((
-            PhysicsPlugins::default(),
-            TnuaControllerPlugin::<YumeScheme>::new(FixedUpdate),
-            TnuaAvian3dPlugin::new(FixedUpdate),
-        ));
+        app.add_plugins(
+            PhysicsPlugins::default()
+                .build()
+                .disable::<PhysicsTransformPlugin>()
+                .disable::<PhysicsInterpolationPlugin>(),
+        );
+        app.add_plugins(LightyearAvianPlugin {
+            replication_mode: AvianReplicationMode::Position,
+            rollback_resources: true,
+            ..default()
+        });
 
         app.add_plugins((
             ProtocolPlugin,
@@ -43,7 +49,6 @@ impl Plugin for ServerPlugin {
 
         app.insert_resource(ServerConfigResource(self.config.clone()));
         app.init_resource::<NextPlayerColor>();
-        app.init_resource::<WalkConfig>();
         app.init_resource::<PersistenceCoordinator>();
 
         // Wire TLS identity loading from config/env vars.
@@ -92,14 +97,11 @@ impl Plugin for ServerPlugin {
             auth::handle_identity_hello.in_set(ServerSystems),
         );
 
-        app.add_systems(FixedUpdate, apply_client_input.in_set(ServerSystems));
-
         app.configure_sets(FixedUpdate, player::PlayerMovementSet.after(ServerSystems));
 
         app.add_systems(
             FixedUpdate,
             (
-                sync_transform_to_position,
                 creatures::sync_creature_position,
             )
                 .after(PhysicsSystems::Writeback),

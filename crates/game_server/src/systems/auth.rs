@@ -13,24 +13,23 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy_tnua::prelude::*;
-use bevy_tnua_avian3d::prelude::*;
 use game_core::constants::{GROUND_Y, MAX_PLAYERS};
 use game_core::id::PlayerId;
 use game_protocol::channels::ReliableChannel;
 use game_protocol::{
-    ConnectionRejected, IdentityHello, PROTOCOL_ID, PlayerColor, RejectionKind, Welcome,
+    ConnectionRejected, IdentityHello, MovementInput, PROTOCOL_ID, PlayerColor, RejectionKind,
+    Welcome,
 };
+use lightyear::input::native::ActionState;
 use lightyear::connection::client_of::ClientOf;
 use lightyear::connection::network_target::NetworkTarget;
 use lightyear::prelude::*;
-use player::{YumeScheme, spawn_player};
+use player::{PlayerPhysicsBundle, spawn_player};
 use tracing::{info, warn};
 
 use crate::config::ServerConfig;
 
 use super::connection::{ClientPlayer, NextPlayerColor, ServerConfigResource};
-use super::setup::WalkConfig;
 use social::systems::{ConnectedRoster, PlayerClientMap, SocialClientPlayer};
 
 // ---------------------------------------------------------------------------
@@ -116,6 +115,7 @@ pub fn on_client_connected(
 pub fn handle_identity_hello(
     mut receivers: Query<(
         Entity,
+        &RemoteId,
         &mut MessageReceiver<IdentityHello>,
         Option<&PendingSession>,
     )>,
@@ -129,11 +129,10 @@ pub fn handle_identity_hello(
     mut player_client_map: Option<ResMut<PlayerClientMap>>,
     existing_players: Query<(Entity, &player::Player)>,
     pending_counter: Query<&PendingSession>,
-    walk_config: Res<WalkConfig>,
 ) {
     let total_pending = pending_counter.iter().count();
 
-    for (entity, mut receiver, pending) in receivers.iter_mut() {
+    for (entity, remote_id, mut receiver, pending) in receivers.iter_mut() {
         if pending.is_none() {
             continue;
         }
@@ -224,22 +223,19 @@ pub fn handle_identity_hello(
 
             commands.entity(player_entity).insert((
                 color,
+                ActionState::<MovementInput>::default(),
                 Replicate::to_clients(NetworkTarget::All),
-                InterpolationTarget::to_clients(NetworkTarget::All),
+                PredictionTarget::to_clients(NetworkTarget::Single(remote_id.0)),
+                InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(remote_id.0)),
                 ControlledBy {
                     owner: entity,
                     lifetime: Lifetime::SessionBased,
                 },
             ));
 
-            commands.entity(player_entity).insert((
-                RigidBody::Dynamic,
-                Collider::capsule(0.35, 0.5),
-                LockedAxes::ROTATION_LOCKED,
-                TnuaAvian3dSensorShape(Collider::cylinder(0.34, 0.0)),
-                TnuaController::<YumeScheme>::default(),
-                TnuaConfig::<YumeScheme>(walk_config.0.clone()),
-            ));
+            commands
+                .entity(player_entity)
+                .insert(PlayerPhysicsBundle::default());
         }
     }
 }

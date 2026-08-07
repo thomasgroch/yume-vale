@@ -1,4 +1,5 @@
 use bevy::math::curve::{Curve, Ease, FunctionCurve, Interval};
+use bevy::ecs::entity::{EntityMapper, MapEntities};
 use bevy::prelude::{Component, Reflect, Srgba, Vec3};
 use game_core::decorations::DecorationKind;
 use game_core::player_state::PlayerInput;
@@ -6,6 +7,18 @@ use game_core::resources::ResourceKind;
 use game_core::world_config::CreatureKind;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, Reflect)]
+pub struct MovementInput {
+    pub move_x: i8,
+    pub move_z: i8,
+    pub run: bool,
+    pub jump: bool,
+}
+
+impl MapEntities for MovementInput {
+    fn map_entities<M: EntityMapper>(&mut self, _entity_mapper: &mut M) {}
+}
 
 // ---------------------------------------------------------------------------
 // Player components (existing)
