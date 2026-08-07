@@ -3,7 +3,7 @@ use bevy::app::{App, FixedUpdate, Plugin};
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::schedule::SystemSet;
 #[cfg(feature = "physics")]
-use bevy::ecs::system::resource_exists;
+use bevy::ecs::schedule::common_conditions::resource_exists;
 use lightyear::prelude::*;
 
 #[cfg(feature = "physics")]
