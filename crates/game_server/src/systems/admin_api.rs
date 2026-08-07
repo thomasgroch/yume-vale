@@ -131,7 +131,10 @@ impl Plugin for AdminApiPlugin {
         let token = match std::env::var("YUME_ADMIN_TOKEN") {
             Ok(t) if !t.is_empty() => t,
             _ => {
-                tracing::warn!("YUME_ADMIN_TOKEN not set — admin API disabled (port {} not bound)", self.port);
+                tracing::warn!(
+                    "YUME_ADMIN_TOKEN not set — admin API disabled (port {} not bound)",
+                    self.port
+                );
                 return;
             }
         };
@@ -176,13 +179,16 @@ pub fn sync_admin_snapshot(
     let current: Vec<AdminPlayer> = clients
         .iter()
         .filter_map(|cp| {
-            player_data.get(cp.player_entity).ok().map(|(pos, col)| AdminPlayer {
-                player_id: cp.player_id.get(),
-                x: pos.x,
-                y: pos.y,
-                z: pos.z,
-                color: col.0,
-            })
+            player_data
+                .get(cp.player_entity)
+                .ok()
+                .map(|(pos, col)| AdminPlayer {
+                    player_id: cp.player_id.get(),
+                    x: pos.x,
+                    y: pos.y,
+                    z: pos.z,
+                    color: col.0,
+                })
         })
         .collect();
 
@@ -191,26 +197,37 @@ pub fn sync_admin_snapshot(
     // Detect joins
     for p in &current {
         if !api.known_ids.contains(&p.player_id) {
-            let _ = api.tx.send(AdminEvent::PlayerJoined {
-                player_id: p.player_id,
-                color: p.color,
-                x: p.x,
-                y: p.y,
-                z: p.z,
-            }.to_json());
+            let _ = api.tx.send(
+                AdminEvent::PlayerJoined {
+                    player_id: p.player_id,
+                    color: p.color,
+                    x: p.x,
+                    y: p.y,
+                    z: p.z,
+                }
+                .to_json(),
+            );
         }
     }
     // Detect leaves
     for &id in &api.known_ids {
         if !current_ids.contains(&id) {
-            let _ = api.tx.send(AdminEvent::PlayerLeft { player_id: id }.to_json());
+            let _ = api
+                .tx
+                .send(AdminEvent::PlayerLeft { player_id: id }.to_json());
         }
     }
     api.known_ids = current_ids;
 
     // Periodic position broadcast
     if tick % TICK_BROADCAST_INTERVAL == 0 {
-        let _ = api.tx.send(AdminEvent::Tick { players: current.clone(), tick }.to_json());
+        let _ = api.tx.send(
+            AdminEvent::Tick {
+                players: current.clone(),
+                tick,
+            }
+            .to_json(),
+        );
     }
 
     // Update REST snapshot
@@ -264,7 +281,11 @@ async fn live_ws(
     AxumQuery(q): AxumQuery<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let ok = q.token.as_deref().map(|t| t == s.token.as_ref()).unwrap_or(false);
+    let ok = q
+        .token
+        .as_deref()
+        .map(|t| t == s.token.as_ref())
+        .unwrap_or(false);
     if !ok {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
@@ -275,7 +296,10 @@ async fn handle_ws(mut socket: WebSocket, s: AxumState) {
     // Initial full snapshot
     {
         let snap = s.snapshot.read().unwrap().clone();
-        let event = AdminEvent::Snapshot { players: snap.players, tick: snap.tick };
+        let event = AdminEvent::Snapshot {
+            players: snap.players,
+            tick: snap.tick,
+        };
         let _ = socket.send(Message::Text(event.to_json().into())).await;
     }
 
@@ -307,7 +331,11 @@ async fn run_axum(
     snapshot: Arc<RwLock<AdminSnapshot>>,
     tx: broadcast::Sender<String>,
 ) {
-    let state = AxumState { snapshot, tx, token: token.into() };
+    let state = AxumState {
+        snapshot,
+        tx,
+        token: token.into(),
+    };
 
     let app = Router::new()
         .route("/api/admin/v1/health", get(health))
@@ -320,5 +348,7 @@ async fn run_axum(
         .await
         .expect("bind admin API port");
     tracing::info!("admin API listening on {addr}");
-    axum::serve(listener, app).await.expect("admin API serve error");
+    axum::serve(listener, app)
+        .await
+        .expect("admin API serve error");
 }

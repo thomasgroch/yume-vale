@@ -1,5 +1,5 @@
-use bevy::math::curve::{Curve, Ease, FunctionCurve, Interval};
 use bevy::ecs::entity::{EntityMapper, MapEntities};
+use bevy::math::curve::{Curve, Ease, FunctionCurve, Interval};
 use bevy::prelude::{Component, Reflect, Srgba, Vec3};
 use game_core::decorations::DecorationKind;
 use game_core::player_state::PlayerInput;

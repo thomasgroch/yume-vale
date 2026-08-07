@@ -45,7 +45,9 @@ impl Plugin for ServerPlugin {
             CreaturePlugin,
             SocialPlugin,
             ServerHousingPlugin,
-            AdminApiPlugin { port: self.config.admin_port },
+            AdminApiPlugin {
+                port: self.config.admin_port,
+            },
         ));
 
         app.insert_resource(ServerConfigResource(self.config.clone()));
@@ -102,10 +104,7 @@ impl Plugin for ServerPlugin {
 
         app.add_systems(
             FixedUpdate,
-            (
-                creatures::sync_creature_position,
-            )
-                .after(PhysicsSystems::Writeback),
+            (creatures::sync_creature_position,).after(PhysicsSystems::Writeback),
         );
 
         // Resource node collection, cooldown, persistence commit, and player component initialization

@@ -37,7 +37,6 @@ pub fn setup_world(
             LockedAxes::ROTATION_LOCKED,
         ));
     }
-
 }
 
 /// Spawns the Lightyear server entities (UDP, WebTransport, WebSocket) and starts them.

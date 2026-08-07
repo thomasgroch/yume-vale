@@ -19,9 +19,9 @@ use game_protocol::{
     ConnectionRejected, IdentityHello, MovementInput, PROTOCOL_ID, PlayerColor, RejectionKind,
     Welcome,
 };
-use lightyear::prelude::input::native::ActionState;
 use lightyear::connection::client_of::ClientOf;
 use lightyear::connection::network_target::NetworkTarget;
+use lightyear::prelude::input::native::ActionState;
 use lightyear::prelude::*;
 use player::{PlayerPhysicsBundle, spawn_player};
 use tracing::{info, warn};
