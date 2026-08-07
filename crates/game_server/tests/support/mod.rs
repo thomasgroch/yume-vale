@@ -14,7 +14,6 @@
 //! - `Started` inserted manually on the `RawServer` entity
 //! - Crossbeam transport + `PeerAddr` / `PeerId` derivation unchanged
 
-use avian3d;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use core::time::Duration;
