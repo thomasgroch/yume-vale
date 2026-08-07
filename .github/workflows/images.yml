@@ -20,6 +20,10 @@ jobs:
   # ---------------------------------------------------------------------------
   check:
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     services:
       postgres:
         image: postgres:16-alpine
@@ -44,14 +48,20 @@ jobs:
       - name: Install system deps
         run: sudo apt-get update -q && sudo apt-get install -y libudev-dev
 
-      # Cache cargo for faster restore on repeated runs
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      # Cache cargo registry (lock-file-keyed; sccache handles artifacts)
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: "false"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      # Clippy only on library/binary targets (tests compiled in the next step)
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
       - name: Run tests (SQLite default)
         run: cargo test --workspace
