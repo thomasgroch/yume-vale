@@ -91,6 +91,12 @@ pub fn client_app() -> App {
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
     app.finish();
+    // PredictionManager::on_insert inserts PredictionResource, which is
+    // required by write_history (called by receive_replication for predicted
+    // components). RawClient bypasses the normal connection lifecycle that
+    // would normally insert this.
+    app.world_mut()
+        .spawn(lightyear::prelude::PredictionManager::default());
     app
 }
 

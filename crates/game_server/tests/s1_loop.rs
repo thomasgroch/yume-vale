@@ -98,6 +98,8 @@ fn client_app() -> App {
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
     app.finish();
+    app.world_mut()
+        .spawn(lightyear::prelude::PredictionManager::default());
     app
 }
 

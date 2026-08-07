@@ -1,5 +1,6 @@
 //! Integration tests for authoritative resource collection.
 
+use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use core::time::Duration;
@@ -58,6 +59,10 @@ fn server_app_minimal() -> App {
             .in_set(ServerSystems),
     );
     app.finish();
+    // Spawn a static ground so the Dynamic player body doesn't free-fall out of
+    // INTERACT_RADIUS during multi-tick tests.
+    app.world_mut()
+        .spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
     app
 }
 
@@ -71,6 +76,8 @@ fn client_app_minimal() -> App {
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
     app.finish();
+    app.world_mut()
+        .spawn(lightyear::prelude::PredictionManager::default());
     app
 }
 
