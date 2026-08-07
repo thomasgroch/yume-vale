@@ -11,7 +11,6 @@
 //! 4. On success, spawns exactly one player entity.
 //! 5. Stale session for the same PlayerId is replaced (disconnected before spawn).
 
-use avian3d::prelude::*;
 use bevy::prelude::*;
 use game_core::constants::{GROUND_Y, MAX_PLAYERS};
 use game_core::id::PlayerId;
@@ -20,7 +19,7 @@ use game_protocol::{
     ConnectionRejected, IdentityHello, MovementInput, PROTOCOL_ID, PlayerColor, RejectionKind,
     Welcome,
 };
-use lightyear::input::native::ActionState;
+use lightyear::prelude::input::native::ActionState;
 use lightyear::connection::client_of::ClientOf;
 use lightyear::connection::network_target::NetworkTarget;
 use lightyear::prelude::*;

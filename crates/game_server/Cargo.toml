@@ -17,6 +17,10 @@ creatures = { workspace = true }
 social = { workspace = true }
 housing = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+axum.workspace = true
+tokio.workspace = true
 aeronet_websocket.workspace = true
 aeronet_webtransport.workspace = true
 rustls-pemfile.workspace = true

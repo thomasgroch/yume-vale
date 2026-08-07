@@ -45,6 +45,7 @@ impl Plugin for ServerPlugin {
             CreaturePlugin,
             SocialPlugin,
             ServerHousingPlugin,
+            AdminApiPlugin { port: self.config.admin_port },
         ));
 
         app.insert_resource(ServerConfigResource(self.config.clone()));

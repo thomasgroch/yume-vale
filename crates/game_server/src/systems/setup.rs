@@ -1,6 +1,5 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy_tnua::builtins::{TnuaBuiltinJumpConfig, TnuaBuiltinWalkConfig};
 use lightyear::prelude::*;
 use player::spawn_static_world_colliders;
 // WorldConfigResource is defined below in this module

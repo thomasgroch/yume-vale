@@ -90,6 +90,8 @@ jobs:
             dockerfile: Dockerfile.server
           - name: client
             dockerfile: Dockerfile.client
+          - name: admin
+            dockerfile: Dockerfile.admin
     steps:
       - uses: actions/checkout@v4
 
@@ -126,10 +128,11 @@ jobs:
         run: |
           sed -i -E "s|(yume-vale-server:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/10-server.yaml
           sed -i -E "s|(yume-vale-client:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/20-client.yaml
+          sed -i -E "s|(yume-vale-admin:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|"  deploy/50-admin.yaml
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add deploy/10-server.yaml deploy/20-client.yaml
+          git add deploy/10-server.yaml deploy/20-client.yaml deploy/50-admin.yaml
           git commit -m "deploy: pin images to sha-${{ github.sha }} [skip ci]" || exit 0
           git push

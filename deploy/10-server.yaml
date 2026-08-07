@@ -1,6 +1,6 @@
 # Yume Vale authoritative game server (Bevy + Lightyear).
-# One process, 4 listeners: UDP:5000 (native), WT:5001 (WebTransport browser),
-# WS:5002 (browser fallback — exposed via Ingress /ws path).
+# One process, 5 listeners: UDP:5000 (native), WT:5001 (WebTransport browser),
+# WS:5002 (browser fallback), HTTP:5003 (admin API — requires YUME_ADMIN_TOKEN).
 #
 # Argo CD sync wave: 2 (after postgres + TLS at wave 1)
 apiVersion: apps/v1
@@ -38,6 +38,9 @@ spec:
             - name: websocket
               containerPort: 5002
               protocol: TCP
+            - name: admin-api
+              containerPort: 5003
+              protocol: TCP
           env:
             # TLS certificate paths — the yume-tls Secret is mounted below
             - name: YUME_TLS_CERT
@@ -50,6 +53,14 @@ spec:
                 secretKeyRef:
                   name: yume-db
                   key: url
+            # Admin API token — set this secret to enable the admin panel.
+            # If unset, port 5003 is not bound and the admin API is disabled.
+            - name: YUME_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: yume-admin
+                  key: token
+                  optional: true
           volumeMounts:
             - name: tls
               mountPath: /etc/yume-tls
@@ -81,7 +92,7 @@ spec:
               - key: tls.key
                 path: tls.key
 ---
-# ClusterIP: WebSocket (5002) reached by Traefik through the Ingress /ws route.
+# ClusterIP: WebSocket (5002) and admin API (5003) reached by Traefik via Ingress.
 apiVersion: v1
 kind: Service
 metadata:
@@ -97,6 +108,10 @@ spec:
     - name: websocket
       port: 5002
       targetPort: websocket
+      protocol: TCP
+    - name: admin-api
+      port: 5003
+      targetPort: admin-api
       protocol: TCP
 ---
 # LoadBalancer (k3s ServiceLB): native clients connect straight to UDP 5000
