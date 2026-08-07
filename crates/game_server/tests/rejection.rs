@@ -70,6 +70,7 @@ fn resource_server_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(StatesPlugin);
+    app.add_plugins(avian3d::PhysicsPlugins::default());
     app.add_plugins(ServerPlugins {
         tick_duration: TICK,
     });

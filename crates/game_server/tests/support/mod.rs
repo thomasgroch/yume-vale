@@ -14,6 +14,7 @@
 //! - `Started` inserted manually on the `RawServer` entity
 //! - Crossbeam transport + `PeerAddr` / `PeerId` derivation unchanged
 
+use avian3d;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use core::time::Duration;
@@ -44,6 +45,7 @@ pub fn server_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(StatesPlugin);
+    app.add_plugins(avian3d::PhysicsPlugins::default());
     app.add_plugins(ServerPlugins {
         tick_duration: TICK,
     });

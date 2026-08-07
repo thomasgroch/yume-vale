@@ -31,6 +31,8 @@ pub fn build_test_app() -> bevy::prelude::App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(bevy::state::app::StatesPlugin);
+    // Avian physics — required by PlayerPlugin (physics feature) for SpatialQuery.
+    app.add_plugins(avian3d::PhysicsPlugins::default());
     // Mirror production plugin order (ServerPlugins first): ProtocolPlugin's
     // replicate() calls need resources from lightyear's replicon backend.
     app.add_plugins(lightyear::prelude::server::ServerPlugins {
