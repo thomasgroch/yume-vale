@@ -172,9 +172,7 @@ mod tests {
             {
                 let dir = base.join("missing");
                 std::fs::create_dir_all(&dir).unwrap();
-                unsafe {
-                    set_fake_home(&dir);
-                }
+                set_fake_home(&dir);
                 assert!(load_identity_token().is_none());
             }
 
@@ -182,9 +180,7 @@ mod tests {
             {
                 let dir = base.join("roundtrip");
                 std::fs::create_dir_all(&dir).unwrap();
-                unsafe {
-                    set_fake_home(&dir);
-                }
+                set_fake_home(&dir);
                 save_identity_token("test-token-123");
                 let loaded = load_identity_token();
                 assert_eq!(loaded.as_deref(), Some("test-token-123"));
@@ -194,9 +190,7 @@ mod tests {
             {
                 let dir = base.join("corrupt");
                 std::fs::create_dir_all(&dir).unwrap();
-                unsafe {
-                    set_fake_home(&dir);
-                }
+                set_fake_home(&dir);
                 // Write corrupt JSON at the actual resolved config path.
                 let cfg_file = token_file_path().expect("should resolve config dir");
                 std::fs::create_dir_all(cfg_file.parent().unwrap()).unwrap();
@@ -208,9 +202,7 @@ mod tests {
             {
                 let dir = base.join("override");
                 std::fs::create_dir_all(&dir).unwrap();
-                unsafe {
-                    set_fake_home(&dir);
-                }
+                set_fake_home(&dir);
                 save_identity_token("file-token");
 
                 unsafe {
