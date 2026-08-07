@@ -1,4 +1,5 @@
 mod inventory;
+mod rejection;
 pub(crate) mod snapshot;
 mod status;
 pub(crate) mod version;
@@ -7,6 +8,7 @@ pub use inventory::{
     FeedbackText, InteractionPrompt, InventoryPanel, ResourceQuantity, spawn_inventory_panel,
     update_inventory_panel,
 };
+pub(crate) use rejection::{dismiss_rejection_modal, sync_rejection_modal};
 pub use snapshot::{
     ClientActionFeedback, ClientCooldown, ClientInventory, clear_action_feedback,
     receive_action_rejected, receive_inventory_snapshot, resource_label, resource_quantity,

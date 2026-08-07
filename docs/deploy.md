@@ -11,8 +11,9 @@ push em main
        ├─ wasm: cargo build --target wasm32-unknown-unknown
        └─ build:
             ├─ Dockerfile.server → ghcr.io/thomasgroch/yume-vale-server:{latest,sha-<commit>}
-            └─ Dockerfile.client → ghcr.io/thomasgroch/yume-vale-client:{latest,sha-<commit>}
-  └─ job rollout: sed pin sha-<commit> em deploy/10-server.yaml e deploy/20-client.yaml
+            ├─ Dockerfile.client → ghcr.io/thomasgroch/yume-vale-client:{latest,sha-<commit>}
+            └─ Dockerfile.admin  → ghcr.io/thomasgroch/yume-vale-admin:{latest,sha-<commit>}
+  └─ job rollout: sed pin sha-<commit> em deploy/10-server.yaml, 20-client.yaml e 50-admin.yaml
        └─ commit "deploy: pin images ... [skip ci]" → push
   └─ Argo CD (Application yume-vale, path deploy/, automated+prune+selfHeal)
        └─ rollout dos pods no namespace yume-vale
@@ -24,8 +25,9 @@ O pin do sha é necessário porque `:latest` nunca muda o manifest — sem diff 
 
 | Imagem | Base final | Conteúdo |
 |---|---|---|
-| `yume-vale-server` | distroless-ish (binário server) | game server headless, 3 listeners |
+| `yume-vale-server` | `debian:bookworm-slim` | game server headless, 4 listeners (UDP×2, WS, admin HTTP) |
 | `yume-vale-client` | `nginx:1-alpine` | wasm release (trunk) + assets estáticos |
+| `yume-vale-admin`  | `node:22-alpine` | Next.js 15 standalone (admin panel) |
 
 Notas do build do cliente (`Dockerfile.client`):
 
@@ -42,6 +44,7 @@ Notas do build do cliente (`Dockerfile.client`):
 | 5000 | UDP | netcode (clientes nativos) | Service `yume-server-udp` tipo LoadBalancer (ServiceLB do k3s) |
 | 5001 | UDP/QUIC | WebTransport (browser) | Service `yume-server-udp` tipo LoadBalancer (ServiceLB do k3s) |
 | 5002 | TCP | WebSocket (browser) | ClusterIP `yume-server` → Ingress `/ws` |
+| 5003 | TCP | Admin HTTP/WS API | ClusterIP `yume-server` → Ingress `/api/admin` (requer `YUME_ADMIN_TOKEN`) |
 
 Ingress (Traefik + cert-manager, issuer `letsencrypt-prod`, secret `yume-tls`):
 
@@ -61,6 +64,7 @@ O certificado TLS é gerenciado por um recurso `Certificate` do cert-manager (`d
 | `35-postgres.yaml` | StatefulSet PostgreSQL 16-alpine + ClusterIP Service |
 | `36-db-sealed-secret.yaml` | Sealed Secret com a senha do banco (cifrado, commitado) |
 | `40-tls-certificate.yaml` | cert-manager Certificate para `yume.lab.thomasdev.xyz` (RSA PKCS#8) |
+| `50-admin.yaml` | Deployment admin (Next.js) + Service (3001), sync wave 3 |
 | `argocd-application.yaml` | Application do Argo CD — aplicada **uma vez à mão** (`kubectl apply -f deploy/argocd-application.yaml`); o `directory.exclude` evita recursão |
 
 ### Ordem de sync (Argo CD sync waves)
@@ -100,6 +104,52 @@ A senha é gerada aleatoriamente (32 caracteres alfanuméricos) e selada via Sea
 
 Para regenerar a senha, siga as instruções no próprio arquivo `deploy/36-db-sealed-secret.yaml`.
 
+## Admin Panel
+
+Painel de observabilidade em **`/admin`** — lista jogadores online, posições ao vivo no mapa.
+
+### Ativar
+
+O servidor **não** abre a porta 5003 a menos que `YUME_ADMIN_TOKEN` esteja definido:
+
+```bash
+# Recuperar token do Bitwarden e criar o secret
+TOKEN=$(bw get password "yume-vale — YUME_ADMIN_TOKEN")
+kubectl create secret generic yume-admin -n yume-vale --from-literal=token="$TOKEN"
+```
+
+O Secret é `optional: true` no Deployment — sem ele o servidor sobe normalmente, apenas sem o admin API.
+
+### Endpoints (porta 5003, interna ao cluster)
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| GET | `/api/admin/v1/health` | nenhuma | liveness probe |
+| GET | `/api/admin/v1/players` | `Authorization: Bearer <token>` | snapshot JSON |
+| WS  | `/api/admin/v1/live` | `?token=<token>` | stream de eventos em tempo real |
+
+Via Ingress: `https://yume.lab.thomasdev.xyz/api/admin/...` → `yume-server:5003`
+
+### Acesso
+
+`https://yume.lab.thomasdev.xyz/admin` — solicita o token na primeira visita (guardado em `sessionStorage`).
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `Dockerfile.admin` | Node.js 22, Next.js standalone |
+| `deploy/50-admin.yaml` | Deployment + Service (`yume-admin:3001`) |
+| `deploy/30-ingress.yaml` | Middleware `strip-admin` + Ingress `/admin` e `/api/admin` |
+| `apps/admin/` | Next.js 15 + Jazz v2 alpha SDK |
+| `crates/game_server/src/systems/admin_api.rs` | Plugin axum no servidor Bevy |
+
+### Operação
+
+- **Logs**: `kubectl logs -n yume-vale deploy/yume-admin -f`
+- **Revogar token**: `kubectl delete secret yume-admin -n yume-vale` (servidor desativa o API automaticamente; pod não reinicia)
+- **Rotacionar token**: gerar novo → atualizar bw → `kubectl create secret generic yume-admin -n yume-vale --from-literal=token="$NOVO" --dry-run=client -o yaml | kubectl apply -f -`
+
 ## Variáveis de ambiente
 
 | Variável | Onde | Efeito |
@@ -111,6 +161,7 @@ Para regenerar a senha, siga as instruções no próprio arquivo `deploy/36-db-s
 | `YUME_TLS_KEY` | server (env via Deployment) | caminho para a chave PKCS#8 (produção: `/etc/yume-tls/tls.key`) |
 | `YUME_DATABASE_URL` | server (env via Secret) | PostgreSQL connection string |
 | `RUST_LOG` | server | filtro tracing (default `info`) |
+| `YUME_ADMIN_TOKEN` | server (env via Secret `yume-admin`) | ativa o admin API na porta 5003; se ausente, porta não é aberta |
 
 ## Operação
 

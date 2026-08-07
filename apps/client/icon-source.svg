@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Yume Vale mark: soft pink surface, cream sun, rounded rose valley "V".
+       All content stays within the central ~62% so any maskable mask is safe. -->
+  <rect width="512" height="512" fill="#FFE6F0"/>
+  <!-- cream sun -->
+  <circle cx="256" cy="192" r="50" fill="#FFF2D9"/>
+  <!-- rounded valley V -->
+  <path d="M132 300 L256 390 L380 300"
+        fill="none"
+        stroke="#D65F8C"
+        stroke-width="76"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>

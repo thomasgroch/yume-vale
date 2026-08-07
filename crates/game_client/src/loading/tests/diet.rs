@@ -1,9 +1,11 @@
 //! Texture-diet integration tests for runtime GLB assets.
 //!
-//! **Characterization** (PASS before diet): valid GLB v2, one animation
-//! (72 channels, 161 keyframes, ~5.37s), correct counts, valid bounds.
+//! **Characterization** (PASS before diet): valid GLB v2, correct counts
+//! for wave (one animation, 72 channels, 161 keyframes, ~5.37s),
+//! glimmerwing, fluffball, crystal, berry, and wood (static models,
+//! 4 accessors, 8 bufferViews, 4 images each).
 //!
-//! **Structural regression** (RED on `image/png`, GREEN after diet): every
+//! **Structural regression** (RED on JPEG/PNG, GREEN after diet): every
 //! embedded image is `image/webp`, buffer byteLength consistent with BIN
 //! chunk (≤3 padding bytes).
 
@@ -25,6 +27,7 @@ struct GltfRoot {
     buffers: Vec<GltfBuffer>,
     buffer_views: Vec<GltfBufferView>,
     images: Vec<GltfImage>,
+    #[serde(default)]
     animations: Vec<GltfAnimation>,
     accessors: Vec<GltfAccessor>,
     #[serde(default)]
@@ -148,11 +151,234 @@ fn parse_glb(path: &str) -> ParsedGlb {
     }
 }
 
-/// Crate-relative path (unit tests run from `crates/game_client/`).
+// ---------------------------------------------------------------------------
+// Crate-relative path constants (tests run from `crates/game_client/`)
+// ---------------------------------------------------------------------------
+
 const WAVE_GLB: &str = "../../assets/models/fox/wave.glb";
+const GLIMMERWING_GLB: &str = "../../assets/models/creatures/glimmerwing.glb";
+const FLUFFBALL_GLB: &str = "../../assets/models/creatures/fluffball.glb";
+const CRYSTAL_GLB: &str = "../../assets/models/resources/crystal.glb";
+const BERRY_GLB: &str = "../../assets/models/resources/berry.glb";
+const WOOD_GLB: &str = "../../assets/models/resources/wood.glb";
+
+// ---------------------------------------------------------------------------
+// Shared helpers — used by every characterization / regression test
+// ---------------------------------------------------------------------------
+
+/// Expected top-level array lengths for a GLB asset.
+struct ExpectedCounts {
+    nodes: usize,
+    meshes: usize,
+    skins: usize,
+    accessors: usize,
+    buffer_views: usize,
+    buffers: usize,
+    images: usize,
+    animations: usize,
+}
+
+fn check_glb_header(parsed: &ParsedGlb, label: &str) {
+    assert_eq!(parsed.header.magic, 0x46546C67, "{label}: GLB magic");
+    assert_eq!(parsed.header.version, 2, "{label}: GLB version");
+}
+
+fn check_counts(root: &GltfRoot, label: &str, ec: &ExpectedCounts) {
+    assert_eq!(root.nodes.len(), ec.nodes, "{label}: node count");
+    assert_eq!(root.meshes.len(), ec.meshes, "{label}: mesh count");
+    assert_eq!(root.skins.len(), ec.skins, "{label}: skin count");
+    assert_eq!(
+        root.accessors.len(),
+        ec.accessors,
+        "{label}: accessor count"
+    );
+    assert_eq!(
+        root.buffer_views.len(),
+        ec.buffer_views,
+        "{label}: bufferView count"
+    );
+    assert_eq!(root.buffers.len(), ec.buffers, "{label}: buffer count");
+    assert_eq!(root.images.len(), ec.images, "{label}: image count");
+    assert_eq!(
+        root.animations.len(),
+        ec.animations,
+        "{label}: animation count"
+    );
+}
+
+fn check_accessor_buffer_views(root: &GltfRoot, label: &str) {
+    for (i, acc) in root.accessors.iter().enumerate() {
+        if let Some(bv) = acc.buffer_view {
+            assert!(
+                (bv as usize) < root.buffer_views.len(),
+                "{label}: accessor[{i}] bufferView {bv} out of bounds (max {})",
+                root.buffer_views.len() - 1,
+            );
+        }
+    }
+}
+
+fn check_buffer_view_bounds(root: &GltfRoot, bin_chunk: &[u8], label: &str) {
+    let bin_len = bin_chunk.len();
+    for (i, bv) in root.buffer_views.iter().enumerate() {
+        let end = bv.byte_offset + bv.byte_length;
+        assert!(
+            end <= bin_len as u64,
+            "{label}: bufferView[{i}] offset+length {end} > BIN len {bin_len}",
+        );
+    }
+}
+
+fn check_buffer_byte_length_matches_bin(root: &GltfRoot, bin_chunk: &[u8], label: &str) {
+    let bin_len = bin_chunk.len() as u64;
+    for (i, buf) in root.buffers.iter().enumerate() {
+        let decl = buf.byte_length;
+        assert!(
+            decl <= bin_len,
+            "{label}: buffer[{i}] byteLength {decl} > BIN chunk length {bin_len}",
+        );
+        let pad = bin_len - decl;
+        assert!(
+            pad <= 3,
+            "{label}: buffer[{i}] BIN ({bin_len}) exceeds declared ({decl}) by {pad} (max 3)",
+        );
+    }
+}
+
+fn check_images_are_webp(root: &GltfRoot, label: &str) {
+    assert!(
+        !root.images.is_empty(),
+        "{label}: should have at least one image"
+    );
+    for (i, img) in root.images.iter().enumerate() {
+        assert_eq!(
+            img.mime_type, "image/webp",
+            "{label}: image[{i}] ({:?}) MIME should be image/webp, got {}",
+            img.name, img.mime_type,
+        );
+    }
+}
+
+/// Run all structural characterization checks that apply to every GLB asset.
+fn validate_characterization(parsed: &ParsedGlb, label: &str, ec: &ExpectedCounts) {
+    check_glb_header(parsed, label);
+    check_counts(&parsed.root, label, ec);
+    check_accessor_buffer_views(&parsed.root, label);
+    check_buffer_view_bounds(&parsed.root, &parsed.bin_chunk, label);
+}
 
 // =========================================================================
-// Characterization — PASS on original wave.glb
+// Scoped-asset table — glimmerwing, fluffball, crystal, berry, wood
+// =========================================================================
+
+/// Descriptor for a scoped runtime asset (static model, no animations).
+struct AssetDesc {
+    path: &'static str,
+    label: &'static str,
+    counts: ExpectedCounts,
+}
+
+const SCOPED_ASSETS: &[AssetDesc] = &[
+    AssetDesc {
+        path: GLIMMERWING_GLB,
+        label: "glimmerwing",
+        counts: ExpectedCounts {
+            nodes: 1,
+            meshes: 1,
+            skins: 0,
+            accessors: 4,
+            buffer_views: 8,
+            buffers: 1,
+            images: 4,
+            animations: 0,
+        },
+    },
+    AssetDesc {
+        path: FLUFFBALL_GLB,
+        label: "fluffball",
+        counts: ExpectedCounts {
+            nodes: 1,
+            meshes: 1,
+            skins: 0,
+            accessors: 4,
+            buffer_views: 8,
+            buffers: 1,
+            images: 4,
+            animations: 0,
+        },
+    },
+    AssetDesc {
+        path: CRYSTAL_GLB,
+        label: "crystal",
+        counts: ExpectedCounts {
+            nodes: 1,
+            meshes: 1,
+            skins: 0,
+            accessors: 4,
+            buffer_views: 8,
+            buffers: 1,
+            images: 4,
+            animations: 0,
+        },
+    },
+    AssetDesc {
+        path: BERRY_GLB,
+        label: "berry",
+        counts: ExpectedCounts {
+            nodes: 1,
+            meshes: 1,
+            skins: 0,
+            accessors: 4,
+            buffer_views: 8,
+            buffers: 1,
+            images: 4,
+            animations: 0,
+        },
+    },
+    AssetDesc {
+        path: WOOD_GLB,
+        label: "wood",
+        counts: ExpectedCounts {
+            nodes: 1,
+            meshes: 1,
+            skins: 0,
+            accessors: 4,
+            buffer_views: 8,
+            buffers: 1,
+            images: 4,
+            animations: 0,
+        },
+    },
+];
+
+#[test]
+fn scoped_assets_glb_v2_characterization() {
+    for asset in SCOPED_ASSETS {
+        let parsed = parse_glb(asset.path);
+        validate_characterization(&parsed, asset.label, &asset.counts);
+    }
+}
+
+#[test]
+fn scoped_assets_glb_images_are_webp() {
+    for asset in SCOPED_ASSETS {
+        let ParsedGlb { root, .. } = parse_glb(asset.path);
+        check_images_are_webp(&root, asset.label);
+    }
+}
+
+#[test]
+fn scoped_assets_glb_buffer_byte_length_matches_bin() {
+    for asset in SCOPED_ASSETS {
+        let ParsedGlb {
+            root, bin_chunk, ..
+        } = parse_glb(asset.path);
+        check_buffer_byte_length_matches_bin(&root, &bin_chunk, asset.label);
+    }
+}
+
+// =========================================================================
+// Wave — four separate tests (animation-specific assertions)
 // =========================================================================
 
 #[test]
@@ -197,24 +423,10 @@ fn wave_glb_v2_characterization() {
     assert_eq!(root.buffer_views.len(), 82, "bufferView count");
 
     // And all accessor buffer_view indices are within range
-    for (i, acc) in root.accessors.iter().enumerate() {
-        if let Some(bv) = acc.buffer_view {
-            assert!(
-                (bv as usize) < root.buffer_views.len(),
-                "accessor[{i}] bufferView {bv} out of bounds"
-            );
-        }
-    }
+    check_accessor_buffer_views(&root, "wave");
 
     // And all bufferView offset+length fits within BIN chunk
-    let bin_len = bin_chunk.len();
-    for (i, bv) in root.buffer_views.iter().enumerate() {
-        let end = bv.byte_offset + bv.byte_length;
-        assert!(
-            end <= bin_len as u64,
-            "bufferView[{i}]: offset+length {end} > BIN len {bin_len}"
-        );
-    }
+    check_buffer_view_bounds(&root, &bin_chunk, "wave");
 }
 
 #[test]
@@ -251,24 +463,13 @@ fn wave_glb_channel_sampler_consistency() {
     }
 }
 
-// =========================================================================
-// Structural regression — RED on image/png, GREEN after diet
-// =========================================================================
-
 #[test]
 fn wave_glb_images_are_webp() {
     // Given the runtime wave animation file
     let ParsedGlb { root, .. } = parse_glb(WAVE_GLB);
 
     // Then every embedded image must use WebP format
-    assert!(!root.images.is_empty(), "should have at least one image");
-    for (i, img) in root.images.iter().enumerate() {
-        assert_eq!(
-            img.mime_type, "image/webp",
-            "image[{i}] ({:?}) MIME should be image/webp, got {}",
-            img.name, img.mime_type
-        );
-    }
+    check_images_are_webp(&root, "wave");
 }
 
 #[test]
@@ -277,20 +478,7 @@ fn wave_glb_buffer_byte_length_matches_bin() {
     let ParsedGlb {
         root, bin_chunk, ..
     } = parse_glb(WAVE_GLB);
-    let bin_len = bin_chunk.len() as u64;
 
-    // Then every buffer's declared byteLength is ≤ actual BIN chunk length
-    // and the difference (padding) is at most 3 bytes.
-    for (i, buf) in root.buffers.iter().enumerate() {
-        let decl = buf.byte_length;
-        assert!(
-            decl <= bin_len,
-            "buffer[{i}] byteLength {decl} > BIN chunk length {bin_len}"
-        );
-        let pad = bin_len - decl;
-        assert!(
-            pad <= 3,
-            "buffer[{i}] BIN ({bin_len}) exceeds declared ({decl}) by {pad} (max 3)"
-        );
-    }
+    // Then every buffer's declared byteLength is consistent with BIN chunk
+    check_buffer_byte_length_matches_bin(&root, &bin_chunk, "wave");
 }

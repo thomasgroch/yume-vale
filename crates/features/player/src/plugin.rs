@@ -1,10 +1,11 @@
 use bevy::app::{App, FixedUpdate, Plugin};
-#[cfg(feature = "server")]
+#[cfg(feature = "physics")]
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::schedule::SystemSet;
-#[cfg(feature = "server")]
-use bevy_tnua::TnuaUserControlsSystems;
 use lightyear::prelude::*;
+
+#[cfg(feature = "physics")]
+use crate::physics::JumpLatch;
 
 use crate::components::*;
 use crate::systems::*;
@@ -21,12 +22,12 @@ impl Plugin for PlayerPlugin {
         app.component::<PlayerName>().replicate();
 
         app.add_systems(FixedUpdate, process_actions);
-        #[cfg(feature = "server")]
+        #[cfg(feature = "physics")]
+        app.local_rollback::<JumpLatch>();
+        #[cfg(feature = "physics")]
         app.add_systems(
             FixedUpdate,
-            feed_walk_basis
-                .in_set(TnuaUserControlsSystems)
-                .in_set(PlayerMovementSet),
+            apply_predicted_movement.in_set(PlayerMovementSet),
         );
     }
 }

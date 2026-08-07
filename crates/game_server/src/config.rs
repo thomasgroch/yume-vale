@@ -19,6 +19,9 @@ pub struct ServerConfig {
     /// Path to a PEM private key file for WebTransport TLS (production, PKCS#8 only).
     /// When `None`, falls back to the `YUME_TLS_KEY` env var, then self-signed.
     pub tls_key_path: Option<String>,
+    /// Port for the read-only admin HTTP/WebSocket API.
+    /// Requires `YUME_ADMIN_TOKEN` env var to be set; otherwise the port is not bound.
+    pub admin_port: u16,
 }
 
 impl Default for ServerConfig {
@@ -32,6 +35,7 @@ impl Default for ServerConfig {
             tick_rate: TICK_RATE_HZ,
             tls_cert_path: None,
             tls_key_path: None,
+            admin_port: 5003,
         }
     }
 }

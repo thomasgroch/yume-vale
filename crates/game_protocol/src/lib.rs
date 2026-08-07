@@ -3,7 +3,7 @@ pub mod components;
 pub mod messages;
 pub mod protocol;
 
-pub const PROTOCOL_ID: u64 = 0x59c3_7a72;
+pub const PROTOCOL_ID: u64 = 0x59c3_7a73;
 pub const PRIVATE_KEY: [u8; 32] = *b"yume-vale-dev-key-00000000000000";
 
 pub use channels::*;

@@ -10,11 +10,15 @@ name = "client"
 path = "src/main.rs"
 
 [dependencies]
-game_client = { workspace = true }
 bevy = { workspace = true, features = ["3d", "ui", "default_font", "webp"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+game_client = { workspace = true, features = ["inspector"] }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+game_client = { workspace = true }
 bevy = { workspace = true, features = ["webgl2"] }
 getrandom_0_4 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 getrandom_0_3 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 getrandom_0_2 = { package = "getrandom", version = "0.2", features = ["js"] }
+web-sys = { version = "0.3", features = ["Window"] }

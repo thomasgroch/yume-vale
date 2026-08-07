@@ -1,15 +1,15 @@
 pub mod components;
 pub mod events;
 pub mod plugin;
-#[cfg(feature = "server")]
-pub mod scheme;
+#[cfg(feature = "physics")]
+pub mod physics;
 pub mod systems;
 
 pub use components::*;
 pub use events::*;
 pub use plugin::{PlayerMovementSet, PlayerPlugin};
-#[cfg(feature = "server")]
-pub use scheme::YumeScheme;
+#[cfg(feature = "physics")]
+pub use physics::*;
 pub use systems::*;
 
 use bevy::prelude::*;

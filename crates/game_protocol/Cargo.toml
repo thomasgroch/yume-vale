@@ -7,7 +7,8 @@ rust-version.workspace = true
 
 [dependencies]
 bevy = { workspace = true, features = ["3d", "serialize", "bevy_state"] }
-lightyear = { workspace = true, features = ["client", "server", "std", "replication", "interpolation"] }
+lightyear = { workspace = true, features = ["client", "server", "std", "replication", "prediction", "interpolation", "input_native", "avian3d"] }
+avian3d = { workspace = true, features = ["3d", "serialize", "parry-f32"] }
 serde = { workspace = true }
 game_core = { workspace = true }
 

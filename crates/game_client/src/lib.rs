@@ -2,9 +2,11 @@ pub mod arena;
 pub mod camera;
 pub mod config;
 pub mod connection;
+#[cfg(feature = "inspector")]
 pub mod debug;
 pub mod decorations;
 pub mod flow;
+pub mod graphics;
 pub mod hud;
 pub mod input;
 pub mod loading;

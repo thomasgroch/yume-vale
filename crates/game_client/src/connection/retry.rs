@@ -2,6 +2,10 @@ use bevy::prelude::*;
 use lightyear::connection::client::Connect;
 use lightyear::prelude::*;
 
+use super::transport_fallback::TransportState;
+use super::visibility::PageLifecycle;
+use super::welcome::LocalPlayerId;
+
 const RECONNECT_BACKOFF_S: f32 = 2.0;
 
 type DisconnectedClients<'w, 's> = Query<
@@ -24,7 +28,13 @@ pub(crate) fn retry_connect_when_disconnected(
     time: Res<Time>,
     mut timer: Local<Option<Timer>>,
     clients: DisconnectedClients,
+    transport: Res<TransportState>,
+    lifecycle: Res<PageLifecycle>,
+    mut local_player: ResMut<LocalPlayerId>,
 ) {
+    if transport.rejection_received || lifecycle.blocks_retry() {
+        return;
+    }
     let timer =
         timer.get_or_insert_with(|| Timer::from_seconds(RECONNECT_BACKOFF_S, TimerMode::Repeating));
     timer.tick(time.delta());
@@ -33,6 +43,7 @@ pub(crate) fn retry_connect_when_disconnected(
     }
     for entity in clients.iter() {
         info!("retrying connection for disconnected client {entity:?}");
+        local_player.id = None;
         commands.entity(entity).trigger(|e| Connect { entity: e });
     }
 }
@@ -49,6 +60,9 @@ mod tests {
 
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.insert_resource(TransportState::default());
+        app.init_resource::<PageLifecycle>();
+        app.init_resource::<LocalPlayerId>();
         app.add_systems(Update, retry_connect_when_disconnected);
 
         let counter = Arc::new(AtomicUsize::new(0));
@@ -78,5 +92,36 @@ mod tests {
             counter.load(Ordering::SeqCst) >= 1,
             "Connect should be re-triggered after the backoff"
         );
+    }
+
+    #[test]
+    fn rejected_connection_is_not_retried() {
+        use game_protocol::RejectionKind;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        let mut transport = TransportState::default();
+        transport.reject(RejectionKind::ServerFull);
+        app.insert_resource(transport);
+        app.init_resource::<PageLifecycle>();
+        app.init_resource::<LocalPlayerId>();
+        app.add_systems(Update, retry_connect_when_disconnected);
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let observed = attempts.clone();
+        app.add_observer(move |_: On<Connect>| {
+            observed.fetch_add(1, Ordering::SeqCst);
+        });
+        app.world_mut()
+            .spawn((Client::default(), Disconnected::default()));
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            Duration::from_secs(3),
+        ));
+
+        app.update();
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 0);
     }
 }

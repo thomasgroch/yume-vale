@@ -7,22 +7,24 @@ rust-version.workspace = true
 
 [dependencies]
 bevy = { workspace = true, features = ["3d", "bevy_state"] }
-lightyear = { workspace = true, features = ["server", "client", "udp", "netcode", "crossbeam", "raw_connection", "replication", "interpolation", "webtransport", "webtransport_self_signed", "websocket"] }
+lightyear = { workspace = true, features = ["server", "client", "udp", "netcode", "crossbeam", "raw_connection", "replication", "prediction", "interpolation", "input_native", "avian3d", "webtransport", "webtransport_self_signed", "websocket"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
 game_persistence = { workspace = true }
-player = { workspace = true, features = ["server"] }
+player = { workspace = true, features = ["physics"] }
 resources = { workspace = true }
 creatures = { workspace = true }
 social = { workspace = true }
 housing = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+axum.workspace = true
+tokio.workspace = true
 aeronet_websocket.workspace = true
 aeronet_webtransport.workspace = true
 rustls-pemfile.workspace = true
-avian3d.workspace = true
-bevy-tnua.workspace = true
-bevy-tnua-avian3d.workspace = true
+avian3d = { workspace = true, features = ["3d", "serialize", "parry-f32"] }
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -6,17 +6,15 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-# Physics controller (Tnua) is server-side only; the render client links this
-# crate without it to keep the wasm small.
-server = ["dep:bevy-tnua"]
+physics = ["dep:avian3d"]
 
 [dependencies]
 bevy = { workspace = true, features = ["3d"] }
-lightyear = { workspace = true, features = ["replication"] }
+lightyear = { workspace = true, features = ["replication", "prediction", "input_native"] }
 serde = { workspace = true }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
-bevy-tnua = { workspace = true, optional = true }
+avian3d = { workspace = true, features = ["3d", "parry-f32"], optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true

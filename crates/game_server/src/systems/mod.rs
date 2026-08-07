@@ -1,3 +1,4 @@
+pub mod admin_api;
 pub mod auth;
 pub mod collect;
 pub mod connection;
@@ -8,6 +9,7 @@ pub mod snapshot;
 pub mod tls;
 pub mod visibility;
 
+pub use admin_api::*;
 pub use auth::*;
 pub use collect::*;
 pub use connection::*;

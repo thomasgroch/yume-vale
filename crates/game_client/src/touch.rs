@@ -4,10 +4,20 @@ use bevy::window::PrimaryWindow;
 use crate::flow::AppFlow;
 use crate::ui::{theme, widgets};
 
-/// Fraction of the window (from the right / from the bottom) where the jump
-/// button lives; touches starting there must not drive movement.
-const JUMP_ZONE_RIGHT: f32 = 0.30;
-const JUMP_ZONE_BOTTOM: f32 = 0.35;
+/// Diameter of the on-screen jump button; the hitbox derives from the visual.
+const JUMP_BUTTON_SIZE: f32 = theme::SPACE_72;
+/// Distance of the jump button from the right / bottom screen edges.
+const JUMP_BUTTON_MARGIN: f32 = theme::SPACE_32;
+/// Extra catch area allowed around the visual jump button (capped at 8px).
+const JUMP_HITBOX_PAD: f32 = 8.0;
+/// Touch starts left of this fraction of the width drive movement; the rest
+/// (right half) drives the camera.
+const LEFT_RIGHT_SPLIT: f32 = 0.5;
+const _: () = assert!(
+    JUMP_HITBOX_PAD <= 8.0,
+    "jump hitbox padding must not exceed 8px"
+);
+
 const JOYSTICK_RING_SIZE: f32 = 96.0;
 const JOYSTICK_KNOB_SIZE: f32 = 44.0;
 
@@ -118,17 +128,63 @@ fn to_ui_pos(window_pos: Vec2, window_height: f32) -> Vec2 {
     Vec2::new(window_pos.x, window_height - window_pos.y)
 }
 
-/// Whether a window position lies inside the jump button zone.
-pub fn in_jump_zone(pos: Vec2, window: &Window) -> bool {
-    pos.x > window.width() * (1.0 - JUMP_ZONE_RIGHT) && pos.y < window.height() * JUMP_ZONE_BOTTOM
+/// The control a touch is assigned to, decided once at press time purely from
+/// its start position (window coords, origin bottom-left).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchRole {
+    /// Started in the left half of the screen: drives the movement joystick.
+    Movement,
+    /// Started in the right half: one-finger camera orbit + vertical-drag zoom.
+    Camera,
+    /// Started on the jump button: jump only, never movement or camera.
+    Jump,
 }
 
-/// The first touch that did not start inside the jump button zone.
-pub fn movement_touch_id(touches: &Touches, window: &Window) -> Option<u64> {
+/// The jump button rectangle (window coords, bottom-left origin): a
+/// [`JUMP_BUTTON_SIZE`]-px square `JUMP_BUTTON_MARGIN` px from the right and
+/// bottom edges, grown by [`JUMP_HITBOX_PAD`] on every side.
+fn jump_hitbox(width: f32) -> Rect {
+    let right = width - JUMP_BUTTON_MARGIN;
+    Rect::from_corners(
+        Vec2::new(
+            right - JUMP_BUTTON_SIZE - JUMP_HITBOX_PAD,
+            JUMP_BUTTON_MARGIN - JUMP_HITBOX_PAD,
+        ),
+        Vec2::new(
+            right + JUMP_HITBOX_PAD,
+            JUMP_BUTTON_MARGIN + JUMP_BUTTON_SIZE + JUMP_HITBOX_PAD,
+        ),
+    )
+}
+
+/// Classify a window position into a [`TouchRole`]. Jump wins over the half
+/// split; every point is covered (no dead zones).
+pub fn touch_role(pos: Vec2, width: f32) -> TouchRole {
+    if jump_hitbox(width).contains(pos) {
+        TouchRole::Jump
+    } else if pos.x < width * LEFT_RIGHT_SPLIT {
+        TouchRole::Movement
+    } else {
+        TouchRole::Camera
+    }
+}
+
+/// The first touch whose start position classifies as `role`.
+fn first_touch_with_role(touches: &Touches, window: &Window, role: TouchRole) -> Option<u64> {
     touches
         .iter()
-        .find(|t| !in_jump_zone(t.start_position(), window))
+        .find(|t| touch_role(t.start_position(), window.width()) == role)
         .map(|t| t.id())
+}
+
+/// The first touch that started in the left half (drives the joystick).
+pub fn movement_touch_id(touches: &Touches, window: &Window) -> Option<u64> {
+    first_touch_with_role(touches, window, TouchRole::Movement)
+}
+
+/// The first touch that started in the right half (drives the camera).
+pub fn camera_touch_id(touches: &Touches, window: &Window) -> Option<u64> {
+    first_touch_with_role(touches, window, TouchRole::Camera)
 }
 
 /// Shows the joystick ring/knob under the movement touch while it drags.
@@ -185,6 +241,26 @@ pub fn update_joystick_ui(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::input::touch::{TouchInput, TouchPhase};
+    use bevy::window::WindowResolution;
+
+    const PORTRAIT: (f32, f32) = (390.0, 844.0);
+    const LANDSCAPE: (f32, f32) = (844.0, 390.0);
+
+    fn window(width: f32, height: f32) -> Window {
+        Window {
+            resolution: WindowResolution::new(width as u32, height as u32),
+            ..default()
+        }
+    }
+
+    fn jump_center(width: f32) -> Vec2 {
+        let right = width - JUMP_BUTTON_MARGIN;
+        Vec2::new(
+            right - JUMP_BUTTON_SIZE / 2.0,
+            JUMP_BUTTON_MARGIN + JUMP_BUTTON_SIZE / 2.0,
+        )
+    }
 
     #[test]
     fn ui_pos_flips_y() {
@@ -208,5 +284,213 @@ mod tests {
         *app.world_mut().get_mut::<Interaction>(button).unwrap() = Interaction::None;
         app.update();
         assert!(!app.world().resource::<TouchJump>().0);
+    }
+
+    // ─── Zone classifier ───────────────────────────────────────────────
+
+    #[test]
+    fn left_half_is_movement_in_both_orientations() {
+        for (width, height) in [PORTRAIT, LANDSCAPE] {
+            let pos = Vec2::new(width * 0.25, height * 0.5);
+            assert_eq!(touch_role(pos, width), TouchRole::Movement);
+        }
+    }
+
+    #[test]
+    fn right_half_is_camera_in_both_orientations() {
+        for (width, height) in [PORTRAIT, LANDSCAPE] {
+            let pos = Vec2::new(width * 0.75, height * 0.5);
+            assert_eq!(touch_role(pos, width), TouchRole::Camera);
+        }
+    }
+
+    #[test]
+    fn exact_50_percent_boundary_goes_to_camera() {
+        for (width, height) in [PORTRAIT, LANDSCAPE] {
+            let boundary = width * 0.5;
+            assert_eq!(
+                touch_role(Vec2::new(boundary, height * 0.5), width),
+                TouchRole::Camera,
+                "x == 50% must be camera"
+            );
+            assert_eq!(
+                touch_role(Vec2::new(boundary - 0.5, height * 0.5), width),
+                TouchRole::Movement,
+                "just left of 50% must be movement"
+            );
+        }
+    }
+
+    #[test]
+    fn jump_center_is_jump_in_both_orientations() {
+        for width in [PORTRAIT.0, LANDSCAPE.0] {
+            assert_eq!(touch_role(jump_center(width), width), TouchRole::Jump);
+        }
+    }
+
+    #[test]
+    fn visual_button_corners_are_jump() {
+        for width in [PORTRAIT.0, LANDSCAPE.0] {
+            let right = width - JUMP_BUTTON_MARGIN;
+            assert_eq!(
+                touch_role(
+                    Vec2::new(right - JUMP_BUTTON_SIZE, JUMP_BUTTON_MARGIN),
+                    width
+                ),
+                TouchRole::Jump,
+                "top-left corner of the visual button"
+            );
+            assert_eq!(
+                touch_role(
+                    Vec2::new(right, JUMP_BUTTON_MARGIN + JUMP_BUTTON_SIZE),
+                    width
+                ),
+                TouchRole::Jump,
+                "bottom-right corner of the visual button"
+            );
+        }
+    }
+
+    #[test]
+    fn jump_hitbox_padding_is_at_most_8px() {
+        for (width, _) in [PORTRAIT, LANDSCAPE] {
+            let box_ = jump_hitbox(width);
+            let visual = Rect::from_corners(
+                Vec2::new(
+                    width - JUMP_BUTTON_MARGIN - JUMP_BUTTON_SIZE,
+                    JUMP_BUTTON_MARGIN,
+                ),
+                Vec2::new(
+                    width - JUMP_BUTTON_MARGIN,
+                    JUMP_BUTTON_MARGIN + JUMP_BUTTON_SIZE,
+                ),
+            );
+            assert!(
+                box_.contains(visual.min) && box_.contains(visual.max),
+                "hitbox must cover the whole visual button"
+            );
+        }
+    }
+
+    #[test]
+    fn just_outside_jump_hitbox_is_camera_not_jump() {
+        for width in [PORTRAIT.0, LANDSCAPE.0] {
+            let box_ = jump_hitbox(width);
+            let center = box_.center();
+            for pos in [
+                Vec2::new(box_.max.x + 0.5, center.y),
+                Vec2::new(box_.min.x - 0.5, center.y),
+                Vec2::new(center.x, box_.max.y + 0.5),
+            ] {
+                assert_eq!(
+                    touch_role(pos, width),
+                    TouchRole::Camera,
+                    "point {pos:?} outside the hitbox must be camera"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn left_half_inside_jump_band_is_movement() {
+        // y inside the jump band but x in the left half: no dead zone, not jump.
+        for width in [PORTRAIT.0, LANDSCAPE.0] {
+            let pos = Vec2::new(width * 0.25, jump_center(width).y);
+            assert_eq!(touch_role(pos, width), TouchRole::Movement);
+        }
+    }
+
+    #[test]
+    fn roles_cover_every_point_exactly_once() {
+        for (width, height) in [PORTRAIT, LANDSCAPE] {
+            let mut x = 0.0;
+            while x <= width {
+                let mut y = 0.0;
+                while y <= height {
+                    let role = touch_role(Vec2::new(x, y), width);
+                    assert!(
+                        matches!(
+                            role,
+                            TouchRole::Movement | TouchRole::Camera | TouchRole::Jump
+                        ),
+                        "point ({x},{y}) must get a role"
+                    );
+                    y += 25.0;
+                }
+                x += 25.0;
+            }
+        }
+    }
+
+    // ─── Touch selection ───────────────────────────────────────────────
+
+    /// A minimal app with a working `Touches` resource driven by
+    /// [`TouchInput`] messages, mirroring bevy's own touch system.
+    fn touches_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<bevy::input::touch::Touches>();
+        app.add_message::<TouchInput>();
+        app.add_systems(Update, (bevy::input::touch::touch_screen_input_system,));
+        app
+    }
+
+    fn press(app: &mut App, id: u64, pos: Vec2) {
+        app.world_mut().write_message(TouchInput {
+            id,
+            position: pos,
+            phase: TouchPhase::Started,
+            force: None,
+            window: Entity::PLACEHOLDER,
+        });
+    }
+
+    #[test]
+    fn simultaneous_left_and_right_touches_get_distinct_roles() {
+        let mut app = touches_app();
+        let w = window(PORTRAIT.0, PORTRAIT.1);
+        press(&mut app, 1, Vec2::new(100.0, 400.0));
+        press(&mut app, 2, Vec2::new(300.0, 400.0));
+        app.update();
+
+        let touches = app.world().resource::<bevy::input::touch::Touches>();
+        assert_eq!(movement_touch_id(touches, &w), Some(1));
+        assert_eq!(camera_touch_id(touches, &w), Some(2));
+    }
+
+    #[test]
+    fn jump_touch_is_selected_by_neither_movement_nor_camera() {
+        let mut app = touches_app();
+        let w = window(PORTRAIT.0, PORTRAIT.1);
+        press(&mut app, 3, jump_center(w.width()));
+        app.update();
+
+        let touches = app.world().resource::<bevy::input::touch::Touches>();
+        assert_eq!(movement_touch_id(touches, &w), None);
+        assert_eq!(camera_touch_id(touches, &w), None);
+    }
+
+    #[test]
+    fn camera_touch_works_without_any_movement_touch() {
+        let mut app = touches_app();
+        let w = window(LANDSCAPE.0, LANDSCAPE.1);
+        press(&mut app, 4, Vec2::new(600.0, 100.0));
+        app.update();
+
+        let touches = app.world().resource::<bevy::input::touch::Touches>();
+        assert_eq!(movement_touch_id(touches, &w), None);
+        assert_eq!(camera_touch_id(touches, &w), Some(4));
+    }
+
+    #[test]
+    fn jump_touch_does_not_steal_the_movement_role() {
+        let mut app = touches_app();
+        let w = window(PORTRAIT.0, PORTRAIT.1);
+        press(&mut app, 5, jump_center(w.width()));
+        press(&mut app, 6, Vec2::new(100.0, 400.0));
+        app.update();
+
+        let touches = app.world().resource::<bevy::input::touch::Touches>();
+        assert_eq!(movement_touch_id(touches, &w), Some(6));
+        assert_eq!(camera_touch_id(touches, &w), None);
     }
 }

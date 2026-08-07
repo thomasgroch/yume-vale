@@ -1,5 +1,7 @@
 use bevy::prelude::*;
+#[cfg(feature = "inspector")]
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+#[cfg(feature = "inspector")]
 use bevy_inspector_egui::bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use core::time::Duration;
 use game_core::constants::TICK_RATE_HZ;
@@ -14,17 +16,22 @@ use crate::camera::{
 };
 use crate::config::ClientConfig;
 use crate::connection::{
-    IdentityToken, LocalPlayerId, TransportState, handle_transport_fallback, handle_welcome,
+    IdentityToken, LocalPlayerId, PageLifecycle, TransportState, handle_connection_rejected,
+    handle_page_visibility, handle_transport_fallback, handle_welcome, install_visibility_listener,
     load_identity_token, retry_connect_when_disconnected, send_identity_hello,
 };
+#[cfg(feature = "inspector")]
 use crate::debug::{DebugMode, inspector_ui, toggle_debug_mode};
 use crate::decorations::spawn_decorations;
 use crate::flow::{self, AppFlow};
+use crate::graphics::{
+    GraphicsQuality, apply_graphics_quality, graphics_toggle_button, graphics_toggle_hover,
+};
 use crate::hud::{
     ClientActionFeedback, ClientCooldown, ClientInventory, clear_action_feedback,
-    receive_action_rejected, receive_inventory_snapshot, reconnect_button, spawn_hud,
-    spawn_inventory_panel, tick_cooldown, toggle_gameplay_panels, update_hud_status,
-    update_inventory_panel, update_version_text,
+    dismiss_rejection_modal, receive_action_rejected, receive_inventory_snapshot, reconnect_button,
+    spawn_hud, spawn_inventory_panel, sync_rejection_modal, tick_cooldown, toggle_gameplay_panels,
+    update_hud_status, update_inventory_panel, update_version_text,
 };
 use crate::input::{InputState, gather_input};
 use crate::loading;
@@ -56,6 +63,7 @@ impl Plugin for ClientPlugin {
         let tick_duration = Duration::from_secs_f64(1.0 / TICK_RATE_HZ as f64);
         app.add_plugins(ClientPlugins { tick_duration });
         app.add_plugins((ProtocolPlugin, PlayerPlugin));
+        #[cfg(feature = "inspector")]
         app.add_plugins((EguiPlugin::default(), DefaultInspectorConfigPlugin));
 
         app.register_type::<game_protocol::PlayerPosition>();
@@ -64,6 +72,7 @@ impl Plugin for ClientPlugin {
 
         app.insert_resource(self.config.clone());
         app.init_resource::<InputState>();
+        app.init_resource::<GraphicsQuality>();
         app.init_resource::<LocalPlayerId>();
         app.init_resource::<CameraOrbit>();
         app.init_resource::<BuildMode>();
@@ -79,10 +88,12 @@ impl Plugin for ClientPlugin {
             app.insert_resource(IdentityToken(stored));
         }
         app.insert_resource(TransportState::detect());
+        #[cfg(feature = "inspector")]
         app.init_resource::<DebugMode>();
         app.init_resource::<FocusState>();
         app.init_resource::<TouchJump>();
         app.init_resource::<TouchDetected>();
+        app.init_resource::<PageLifecycle>();
 
         // ── State machine ─────────────────────────────────────────────────
         app.init_state::<AppFlow>();
@@ -110,12 +121,14 @@ impl Plugin for ClientPlugin {
             )
                 .chain(),
         );
+        app.add_systems(Startup, install_visibility_listener);
 
         // Update systems (always running, some self-gate on state)
         app.add_systems(
             Update,
             (
                 handle_welcome,
+                handle_connection_rejected,
                 send_identity_hello,
                 attach_player_visuals,
                 setup_fox_animators,
@@ -128,6 +141,13 @@ impl Plugin for ClientPlugin {
                 rotate_camera_input,
                 zoom_camera_input,
                 touch_camera_input,
+            ),
+        );
+        app.add_systems(
+            Update,
+            (
+                sync_rejection_modal.after(handle_connection_rejected),
+                dismiss_rejection_modal,
             ),
         );
         // Snapshot receivers (Lightyear MessageReceiver systems)
@@ -148,20 +168,37 @@ impl Plugin for ClientPlugin {
         app.add_systems(
             Update,
             (
-                retry_connect_when_disconnected,
+                retry_connect_when_disconnected.after(handle_page_visibility),
                 handle_transport_fallback,
                 update_hud_status,
                 update_version_text,
                 reconnect_button,
                 play_button,
                 play_button_hover,
-                toggle_debug_mode,
                 build_controls_ui,
                 show_bond_display,
                 show_feed_prompt,
                 update_plot_owner_indicators,
             )
                 .run_if(in_state(AppFlow::Menu).or_else(in_state(AppFlow::InGame))),
+        );
+        // Graphics quality toggle: flip state, then push it onto the render
+        // world — deterministic toggle → apply ordering, only while the menu
+        // is active (the preset is chosen before pressing Jogar).
+        app.add_systems(
+            Update,
+            (
+                graphics_toggle_button,
+                apply_graphics_quality,
+                graphics_toggle_hover,
+            )
+                .chain()
+                .run_if(in_state(AppFlow::Menu)),
+        );
+        #[cfg(feature = "inspector")]
+        app.add_systems(
+            Update,
+            toggle_debug_mode.run_if(in_state(AppFlow::Menu).or_else(in_state(AppFlow::InGame))),
         );
         app.add_systems(
             Update,
@@ -170,6 +207,7 @@ impl Plugin for ClientPlugin {
         app.add_systems(
             Update,
             (
+                handle_page_visibility,
                 detect_touch,
                 touch_ui_visibility,
                 jump_button_input,
@@ -178,6 +216,7 @@ impl Plugin for ClientPlugin {
                 clear_stale_focus,
             ),
         );
+        #[cfg(feature = "inspector")]
         app.add_systems(EguiPrimaryContextPass, inspector_ui);
         app.add_systems(
             PostUpdate,
