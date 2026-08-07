@@ -2,6 +2,8 @@ use bevy::app::{App, FixedUpdate, Plugin};
 #[cfg(feature = "physics")]
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::schedule::SystemSet;
+#[cfg(feature = "physics")]
+use bevy::ecs::system::resource_exists;
 use lightyear::prelude::*;
 
 #[cfg(feature = "physics")]
@@ -27,7 +29,9 @@ impl Plugin for PlayerPlugin {
         #[cfg(feature = "physics")]
         app.add_systems(
             FixedUpdate,
-            apply_predicted_movement.in_set(PlayerMovementSet),
+            apply_predicted_movement
+                .in_set(PlayerMovementSet)
+                .run_if(resource_exists::<avian3d::collider_tree::ColliderTrees>),
         );
     }
 }
