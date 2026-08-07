@@ -62,7 +62,7 @@ pub fn clear_identity_token() {
 // ---------------------------------------------------------------------------
 
 #[cfg(not(target_arch = "wasm32"))]
-fn token_file_path() -> Option<std::path::PathBuf> {
+pub(super) fn token_file_path() -> Option<std::path::PathBuf> {
     let dir = dirs::config_dir().map(|d| d.join("yume-vale"))?;
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("identity.json"))
@@ -146,6 +146,19 @@ mod tests {
     mod native_tests {
         use super::*;
 
+        /// Override HOME and (on Linux) XDG_CONFIG_HOME so that `dirs::config_dir()`
+        /// resolves to `dir/.config` regardless of the CI environment.
+        fn set_fake_home(dir: &std::path::Path) {
+            unsafe {
+                std::env::set_var("HOME", dir);
+                // On Linux, XDG_CONFIG_HOME overrides HOME/.config. CI runners often
+                // have it set, which would cause HOME changes to have no effect on
+                // dirs::config_dir(). Force it to a sub-path of our fake home.
+                #[cfg(target_os = "linux")]
+                std::env::set_var("XDG_CONFIG_HOME", dir.join(".config"));
+            }
+        }
+
         /// Helper: run all native token store scenarios sequentially in a
         /// single test, so parallel test execution does not cause HOME env var
         /// conflicts.
@@ -160,7 +173,7 @@ mod tests {
                 let dir = base.join("missing");
                 std::fs::create_dir_all(&dir).unwrap();
                 unsafe {
-                    std::env::set_var("HOME", &dir);
+                    set_fake_home(&dir);
                 }
                 assert!(load_identity_token().is_none());
             }
@@ -170,7 +183,7 @@ mod tests {
                 let dir = base.join("roundtrip");
                 std::fs::create_dir_all(&dir).unwrap();
                 unsafe {
-                    std::env::set_var("HOME", &dir);
+                    set_fake_home(&dir);
                 }
                 save_identity_token("test-token-123");
                 let loaded = load_identity_token();
@@ -180,12 +193,14 @@ mod tests {
             // ── 3. Corrupt store returns None ──
             {
                 let dir = base.join("corrupt");
-                let cfg_dir = dir.join("Library/Application Support/yume-vale");
-                std::fs::create_dir_all(&cfg_dir).unwrap();
-                std::fs::write(cfg_dir.join("identity.json"), "not-json").unwrap();
+                std::fs::create_dir_all(&dir).unwrap();
                 unsafe {
-                    std::env::set_var("HOME", &dir);
+                    set_fake_home(&dir);
                 }
+                // Write corrupt JSON at the actual resolved config path.
+                let cfg_file = token_file_path().expect("should resolve config dir");
+                std::fs::create_dir_all(cfg_file.parent().unwrap()).unwrap();
+                std::fs::write(&cfg_file, "not-json").unwrap();
                 assert!(load_identity_token().is_none());
             }
 
@@ -194,7 +209,7 @@ mod tests {
                 let dir = base.join("override");
                 std::fs::create_dir_all(&dir).unwrap();
                 unsafe {
-                    std::env::set_var("HOME", &dir);
+                    set_fake_home(&dir);
                 }
                 save_identity_token("file-token");
 
@@ -213,6 +228,10 @@ mod tests {
 
             unsafe {
                 std::env::remove_var("HOME");
+            }
+            #[cfg(target_os = "linux")]
+            unsafe {
+                std::env::remove_var("XDG_CONFIG_HOME");
             }
             let _ = std::fs::remove_dir_all(&base);
         }
