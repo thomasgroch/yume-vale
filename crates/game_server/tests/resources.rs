@@ -11,7 +11,7 @@ use game_core::world_config::{ResourceConfig, WorldConfig};
 use game_protocol::ProtocolPlugin;
 use game_server::systems::setup::WorldConfigResource;
 use game_server::systems::{
-    NextPlayerColor, ServerSystems, WalkConfig, apply_client_input, handle_action_intent,
+    NextPlayerColor, ServerSystems, apply_client_input, handle_action_intent,
     handle_new_client_link, initialize_player_components, tick_player_cooldowns,
 };
 use lightyear::crossbeam::CrossbeamIo;
@@ -40,7 +40,6 @@ fn server_app_minimal() -> App {
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.init_resource::<NextPlayerColor>();
-    app.init_resource::<WalkConfig>();
     app.insert_resource(WorldConfigResource(WorldConfig::default()));
     app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
     app.add_observer(handle_new_client_link);

@@ -38,7 +38,6 @@ pub fn build_test_app() -> bevy::prelude::App {
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin, CreaturePlugin, SocialPlugin));
     app.init_resource::<systems::NextPlayerColor>();
-    app.init_resource::<systems::WalkConfig>();
     app.init_resource::<PersistenceCoordinator>();
     // World config resource with test creatures
     app.insert_resource(WorldConfigResource(WorldConfig {

@@ -21,7 +21,7 @@ use game_protocol::{IdentityHello, PROTOCOL_ID, PlayerColor, PlayerPosition, Pro
 use game_server::systems::auth;
 use game_server::systems::setup::WorldConfigResource;
 use game_server::systems::{
-    NextPlayerColor, ServerSystems, WalkConfig, apply_client_input, handle_new_client_link,
+    NextPlayerColor, ServerSystems, apply_client_input, handle_new_client_link,
 };
 use lightyear::connection::client::Connect;
 use lightyear::crossbeam::CrossbeamIo;
@@ -49,7 +49,6 @@ pub fn server_app() -> App {
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin, SocialPlugin));
     app.init_resource::<NextPlayerColor>();
-    app.init_resource::<WalkConfig>();
     app.init_resource::<game_server::systems::persistence::PersistenceCoordinator>();
     // World config resource
     app.insert_resource(WorldConfigResource(

@@ -112,6 +112,8 @@ pub fn setup_server(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use game_core::arena::arena_layout;
+    use game_core::decorations::{DecorationKind, decoration_layout};
 
     /// Total collider count from all arena props.
     fn prop_collider_count() -> usize {

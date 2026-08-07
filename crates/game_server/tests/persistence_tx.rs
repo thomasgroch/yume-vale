@@ -26,7 +26,7 @@ use game_server::systems::auth::PersistenceResource;
 use game_server::systems::persistence::PersistenceCoordinator;
 use game_server::systems::setup::WorldConfigResource;
 use game_server::systems::{
-    NextPlayerColor, ServerSystems, WalkConfig, apply_client_input, handle_action_intent,
+    NextPlayerColor, ServerSystems, apply_client_input, handle_action_intent,
     handle_new_client_link, initialize_player_components, process_pending_transactions,
     tick_player_cooldowns,
 };
@@ -63,7 +63,6 @@ fn server_app_with_persistence(handle: PersistenceHandle, world_config: WorldCon
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.init_resource::<NextPlayerColor>();
-    app.init_resource::<WalkConfig>();
     app.insert_resource(PersistenceResource(handle));
     app.init_resource::<PersistenceCoordinator>();
     app.insert_resource(WorldConfigResource(world_config));

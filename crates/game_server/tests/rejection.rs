@@ -36,7 +36,7 @@ use game_server::systems::connection::ClientPlayer;
 use game_server::systems::persistence::PersistenceCoordinator;
 use game_server::systems::setup::WorldConfigResource;
 use game_server::systems::{
-    NextPlayerColor, ServerSystems, WalkConfig, apply_client_input, handle_action_intent,
+    NextPlayerColor, ServerSystems, apply_client_input, handle_action_intent,
     handle_new_client_link, initialize_player_components, tick_player_cooldowns,
 };
 
@@ -75,7 +75,6 @@ fn resource_server_app() -> App {
     });
     app.add_plugins((ProtocolPlugin, PlayerPlugin));
     app.init_resource::<NextPlayerColor>();
-    app.init_resource::<WalkConfig>();
     app.init_resource::<PersistenceCoordinator>();
     app.insert_resource(WorldConfigResource(resource_test_config()));
     app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
