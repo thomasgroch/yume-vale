@@ -10,4 +10,3 @@ bevy = { workspace = true, features = ["3d"] }
 lightyear = { workspace = true, features = ["replication"] }
 game_core = { workspace = true }
 game_protocol = { workspace = true }
-player = { workspace = true }
