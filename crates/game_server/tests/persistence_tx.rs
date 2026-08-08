@@ -164,14 +164,15 @@ fn collect_with_persistence_adds_to_inventory() {
                 target_id: Some(0),
             });
         }
-        // Step more frames to let persistence worker process and coordinator poll
-        for _ in 0..20 {
-            step(&mut server, &mut client, 1);
-        }
-
+        // Wait for the async persistence worker to ack and the coordinator to
+        // apply the mutation — a fixed frame count is flaky under CI load
+        // where the worker thread can take longer to process the SQLite write.
+        let ok = wait_until(&mut server, &mut client, |s, _c| {
+            server_inventory_count(s, ItemKind::Resource(ResourceKind::Wood)) > 0
+        });
         let count = server_inventory_count(&mut server, ItemKind::Resource(ResourceKind::Wood));
         assert!(
-            count > 0,
+            ok,
             "inventory should have wood after transactional collect, got {count}"
         );
     });
