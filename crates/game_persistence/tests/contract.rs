@@ -295,36 +295,26 @@ fn duplicate_identity_returns_constraint_error() {
 
 #[test]
 fn bounded_queue_returns_full_error() {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::thread;
-
     let dir = tempfile::tempdir().expect("create temp dir");
     let db_path = dir.path().join("queue_test.db");
     let url = format!("sqlite://{}", db_path.display());
 
-    // Capacity 1 so the queue fills up quickly.
+    // Capacity 1: the internal buffer holds exactly one pending command.
     let worker = PersistenceWorker::spawn(&url, 1).expect("spawn worker");
     worker.handle().migrate().expect("migrate");
-    // Busy for 2s — more than enough for all threads to saturate the queue.
-    worker.handle()._test_stall(2000).unwrap();
 
-    let full_seen = AtomicBool::new(false);
-    thread::scope(|s| {
-        for _ in 0..20 {
-            s.spawn(|| {
-                if matches!(
-                    worker.handle()._test_stall(0),
-                    Err(PersistenceError::QueueFull { .. })
-                ) {
-                    full_seen.store(true, Ordering::Relaxed);
-                }
-            });
-        }
-    });
+    // Keep the worker sleeping for 500 ms so it won't drain the buffer between
+    // our rapid sends. Two back-to-back sends from the same thread then saturate
+    // the single buffer slot deterministically — no thread-spawning race needed.
+    worker.handle()._test_stall(500).unwrap();
+
+    let r1 = worker.handle()._test_stall(0); // fills or overflows the 1-slot buffer
+    let r2 = worker.handle()._test_stall(0); // must hit QueueFull (capacity already saturated)
 
     assert!(
-        full_seen.load(Ordering::Relaxed),
-        "expected at least one QueueFull error with 20 concurrent senders on capacity 1"
+        matches!(r1, Err(PersistenceError::QueueFull { .. }))
+            || matches!(r2, Err(PersistenceError::QueueFull { .. })),
+        "expected QueueFull when buffer is at capacity, r1={r1:?}, r2={r2:?}"
     );
 }
 

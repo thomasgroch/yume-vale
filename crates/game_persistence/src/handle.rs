@@ -264,10 +264,14 @@ impl PersistenceHandle {
 
     // --- test helpers ----------------------------------------------------
 
-    /// (testing) Block the worker for `ms` milliseconds.
+    /// (testing) Enqueue a stall command without waiting for it to complete.
+    ///
+    /// Using `send_async` (fire-and-forget) so the caller returns immediately
+    /// while the worker sleeps in the background — necessary for QueueFull tests
+    /// where the caller must observe the full buffer before the stall finishes.
     #[doc(hidden)]
     pub fn _test_stall(&self, ms: u64) -> Result<(), PersistenceError> {
-        self.dispatch(CommandKind::TestStall { ms })?;
+        self.send_async(CommandKind::TestStall { ms })?;
         Ok(())
     }
 }
