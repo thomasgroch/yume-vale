@@ -18,10 +18,12 @@ COPY --from=planner /app/recipe.json recipe.json
 # Builds only third-party deps from the recipe — this layer is cached across
 # pushes as long as Cargo.lock doesn't change, instead of recompiling the
 # whole dependency tree (~440 crates) on every commit.
-RUN CARGO_BUILD_JOBS=2 cargo chef cook -p server --recipe-path recipe.json
+# Jobs=4: CI runners have 4 vCPU/16GB — dev profile (no LTO) has low enough
+# peak memory per unit that full parallelism doesn't risk OOM here (unlike
+# the release+LTO wasm client build, which stays throttled).
+RUN CARGO_BUILD_JOBS=4 cargo chef cook -p server --recipe-path recipe.json
 COPY . .
-# Jobs=2: the VPS has ~8GB RAM; parallel rustc on bevy deps OOMs the build.
-RUN CARGO_BUILD_JOBS=2 cargo build -p server
+RUN CARGO_BUILD_JOBS=4 cargo build -p server
 
 FROM debian:bookworm-slim
 # Linked (not dlopened) by wayland-sys/libudev-sys, so required even headless.

@@ -77,6 +77,11 @@ jobs:
         with:
           cache-targets: "false"
 
+      # certs/ is gitignored (dev-only); the WT digest include_str! in
+      # game_client needs a placeholder — same as Dockerfile.client does.
+      - name: Create dev cert placeholder
+        run: mkdir -p certs && echo 00 > certs/digest.txt
+
       - name: Build wasm client
         run: cargo build --package client --target wasm32-unknown-unknown
 
