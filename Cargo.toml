@@ -64,4 +64,4 @@ debug = false
 
 [profile.release]
 strip = true
-lto = "thin"
+lto = false
