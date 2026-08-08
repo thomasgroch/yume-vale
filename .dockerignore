@@ -2,6 +2,8 @@ target/
 meshy_output/
 certs/
 apps/client/dist/
+apps/admin/node_modules/
+apps/admin/.next/
 .git/
 .playwright-mcp/
 *.log

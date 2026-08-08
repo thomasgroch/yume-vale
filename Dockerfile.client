@@ -1,4 +1,12 @@
-FROM rust:1.96-bookworm AS build
+FROM rust:1.96-bookworm AS chef
+RUN cargo install cargo-chef --locked
+WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
 RUN rustup target add wasm32-unknown-unknown \
  && curl -fsSL "https://github.com/trunk-rs/trunk/releases/latest/download/trunk-$(uname -m)-unknown-linux-gnu.tar.gz" \
     | tar -xz -C /usr/local/bin \
@@ -10,7 +18,11 @@ RUN rustup target add wasm32-unknown-unknown \
 # the required features enabled instead. The trailing -Oz overrides trunk's -O.
 RUN printf '#!/bin/sh\nexec /opt/binaryen-version_131/bin/wasm-opt --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext "$@" -Oz\n' \
     > /usr/local/bin/wasm-opt && chmod +x /usr/local/bin/wasm-opt
-WORKDIR /app
+COPY --from=planner /app/recipe.json recipe.json
+# Builds only third-party deps from the recipe — this layer is cached across
+# pushes as long as Cargo.lock doesn't change, instead of recompiling the
+# whole dependency tree on every commit.
+RUN CARGO_BUILD_JOBS=2 cargo chef cook --release --target wasm32-unknown-unknown -p client --recipe-path recipe.json
 COPY . .
 # certs/ is gitignored (dev-only); the local WT digest include_str! needs a
 # placeholder, while production uses CA validation and falls back to WSS.
