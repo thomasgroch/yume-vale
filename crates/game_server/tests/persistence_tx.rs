@@ -6,9 +6,11 @@
 //! - The persistence coordinator correctly tracks pending transactions
 //! - Queue-full returns busy/error without blocking
 
+mod support;
+use support::{TICK, client_app, connect_client, send_identity_hello, step, wait_until};
+
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
-use core::time::Duration;
 
 use game_core::actions::ActionKind;
 use game_core::inventory::ItemKind;
@@ -18,9 +20,9 @@ use game_core::world_config::{ResourceConfig, WorldConfig};
 use game_persistence::PersistenceHandle;
 use game_persistence::worker::PersistenceWorker;
 
+use game_protocol::ProtocolPlugin;
 use game_protocol::channels::ReliableChannel;
 use game_protocol::messages::ActionIntent;
-use game_protocol::{IdentityHello, PROTOCOL_ID, ProtocolPlugin};
 
 use game_server::systems::auth::PersistenceResource;
 use game_server::systems::persistence::PersistenceCoordinator;
@@ -31,26 +33,17 @@ use game_server::systems::{
     tick_player_cooldowns,
 };
 
-use lightyear::crossbeam::CrossbeamIo;
-use lightyear::prelude::client::{ClientPlugins, RawClient};
-use lightyear::prelude::server::{LinkOf, RawServer, ServerPlugins, Started};
+use lightyear::prelude::server::ServerPlugins;
 use lightyear::prelude::*;
 
 use player::{Player, PlayerPlugin};
 use resources::components::*;
 use resources::systems::{spawn_resource_nodes, tick_resource_respawn};
 
-use std::net::{Ipv4Addr, SocketAddr};
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const TICK: Duration = Duration::from_millis(16);
-const MAX_FRAMES: usize = 400;
-
 // ---------------------------------------------------------------------------
 // Helpers
+// (server_app_with_persistence differs from support::server_app: no
+// SocialPlugin, and wires up the transactional persistence systems)
 // ---------------------------------------------------------------------------
 
 /// Create a server app with persistence enabled.
@@ -91,62 +84,6 @@ fn server_app_with_persistence(handle: PersistenceHandle, world_config: WorldCon
     );
     app.finish();
     app
-}
-
-fn client_app() -> App {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(StatesPlugin);
-    app.add_plugins(ClientPlugins {
-        tick_duration: TICK,
-    });
-    app.add_plugins((ProtocolPlugin, PlayerPlugin));
-    app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
-    app.finish();
-    app.world_mut()
-        .spawn(lightyear::prelude::PredictionManager::default());
-    app
-}
-
-fn connect_client(server: &mut App, client: &mut App, port: u16) {
-    let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
-    let (client_io, server_io) = CrossbeamIo::new_pair();
-    let se = server.world_mut().spawn_empty().id();
-    server
-        .world_mut()
-        .entity_mut(se)
-        .insert((RawServer, Started));
-    let _lo = server
-        .world_mut()
-        .spawn((LinkOf { server: se }, server_io, PeerAddr(addr)))
-        .id();
-    server.world_mut().trigger(LinkStart { entity: _lo });
-    let ce = client
-        .world_mut()
-        .spawn((RawClient, client_io, PeerAddr(addr), ReplicationReceiver))
-        .id();
-    client.world_mut().trigger(Connect { entity: ce });
-}
-
-fn step(server: &mut App, client: &mut App, frames: usize) {
-    for _ in 0..frames {
-        server.update();
-        client.update();
-    }
-}
-
-fn send_identity_hello(server: &mut App, client: &mut App, token: &str) {
-    step(server, client, 10);
-    let mut query = client
-        .world_mut()
-        .query::<&mut MessageSender<IdentityHello>>();
-    if let Some(mut sender) = query.iter_mut(client.world_mut()).next() {
-        sender.send::<ReliableChannel>(IdentityHello {
-            protocol_version: PROTOCOL_ID as u32,
-            token: token.to_string(),
-        });
-    }
-    step(server, client, 3);
 }
 
 fn world_config_with_wood() -> WorldConfig {
@@ -197,24 +134,9 @@ where
     send_identity_hello(&mut server, &mut client, "persistence_test_token");
 
     // Wait for player to spawn
-    let ok = {
-        let mut i = 0;
-        loop {
-            let count = server
-                .world_mut()
-                .query::<&Player>()
-                .iter(server.world())
-                .count();
-            if count >= 1 {
-                break true;
-            }
-            if i >= MAX_FRAMES {
-                break false;
-            }
-            step(&mut server, &mut client, 1);
-            i += 1;
-        }
-    };
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
+        s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
+    });
     assert!(ok, "player should have spawned");
 
     f(worker.handle().clone(), server, client);

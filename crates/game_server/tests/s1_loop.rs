@@ -1,25 +1,23 @@
 //! Full S1 loop: connect → auth → collect → verify inventory snapshot.
 //! Also tests reliable action delivery and monotonic sequence enforcement.
 
+mod support;
+use support::{TICK, client_app, connect_client, send_identity_hello, step, wait_until};
+
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
-use core::time::Duration;
 use game_core::actions::ActionKind;
 use game_core::constants::INTERACT_RADIUS;
 use game_core::inventory::ItemKind;
 use game_core::resources::ResourceKind;
 use game_core::world_config::{ResourceConfig, WorldConfig};
+use game_protocol::ProtocolPlugin;
 use game_protocol::channels::ReliableChannel;
 use game_protocol::messages::ActionIntent;
-use game_protocol::{IdentityHello, PROTOCOL_ID, ProtocolPlugin};
-use lightyear::connection::client::Connect;
-use lightyear::crossbeam::CrossbeamIo;
-use lightyear::prelude::client::{ClientPlugins, RawClient};
-use lightyear::prelude::server::{LinkOf, RawServer, ServerPlugins, Started};
+use lightyear::prelude::server::ServerPlugins;
 use lightyear::prelude::*;
 use player::{Player, PlayerPlugin};
 use resources::components::PlayerInventory;
-use std::net::{Ipv4Addr, SocketAddr};
 
 use game_server::systems::auth;
 use game_server::systems::persistence::PersistenceCoordinator;
@@ -30,11 +28,9 @@ use game_server::systems::{
 };
 
 // ---------------------------------------------------------------------------
-// Constants and test config
+// Test config (server_app here differs from support::server_app: no
+// SocialPlugin, and a resource layout tailored to these collect tests)
 // ---------------------------------------------------------------------------
-
-const TICK: Duration = Duration::from_millis(16);
-const MAX_FRAMES: usize = 400;
 
 fn resource_test_config() -> WorldConfig {
     WorldConfig {
@@ -88,78 +84,33 @@ fn server_app() -> App {
     app
 }
 
-fn client_app() -> App {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(StatesPlugin);
-    app.add_plugins(ClientPlugins {
-        tick_duration: TICK,
-    });
-    app.add_plugins((ProtocolPlugin, PlayerPlugin));
-    app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
-    app.finish();
-    app.world_mut()
-        .spawn(lightyear::prelude::PredictionManager::default());
-    app
-}
-
-fn step(server: &mut App, client: &mut App, frames: usize) {
-    for _ in 0..frames {
-        server.update();
-        client.update();
-    }
-}
-
-fn connect_client(server: &mut App, client: &mut App, port: u16) {
-    let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
-    let (client_io, server_io) = CrossbeamIo::new_pair();
-    let se = server.world_mut().spawn_empty().id();
-    server
-        .world_mut()
-        .entity_mut(se)
-        .insert((RawServer, Started));
-    let _lo = server
-        .world_mut()
-        .spawn((LinkOf { server: se }, server_io, PeerAddr(addr)))
-        .id();
-    server.world_mut().trigger(LinkStart { entity: _lo });
-    let ce = client
-        .world_mut()
-        .spawn((RawClient, client_io, PeerAddr(addr), ReplicationReceiver))
-        .id();
-    client.world_mut().trigger(Connect { entity: ce });
-}
-
-fn send_identity_hello(server: &mut App, client: &mut App, token: &str) {
-    step(server, client, 10);
-    let mut query = client
-        .world_mut()
-        .query::<&mut MessageSender<IdentityHello>>();
-    if let Some(mut sender) = query.iter_mut(client.world_mut()).next() {
-        sender.send::<ReliableChannel>(IdentityHello {
-            protocol_version: PROTOCOL_ID as u32,
-            token: token.to_string(),
-        });
-    }
-    step(server, client, 3);
-}
-
-fn wait_until<F>(server: &mut App, client: &mut App, mut cond: F) -> bool
-where
-    F: FnMut(&mut App, &mut App) -> bool,
-{
-    for _ in 0..MAX_FRAMES {
-        if cond(server, client) {
-            return true;
-        }
-        step(server, client, 1);
-    }
-    cond(server, client)
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Reset a resource node (available again) and clear the player's collect
+/// cooldown, so a follow-up collect attempt in the same test can succeed.
+fn reset_node_and_cooldown(server: &mut App, node_entity: Entity, player_entity: Entity) {
+    if let Some(mut status) = server
+        .world_mut()
+        .get_mut::<resources::components::ResourceNodeStatus>(node_entity)
+    {
+        status.depleted = false;
+        status.respawn_timer = 0.0;
+    }
+    if let Some(mut rep) = server
+        .world_mut()
+        .get_mut::<game_protocol::ResourceNodeState>(node_entity)
+    {
+        rep.depleted = false;
+    }
+    if let Some(mut cd) = server
+        .world_mut()
+        .get_mut::<resources::components::InteractionCooldown>(player_entity)
+    {
+        cd.active = false;
+    }
+}
 
 /// Count items of a given kind across all server-side PlayerInventory components.
 fn server_inventory_count(server: &mut App, kind: ItemKind) -> u32 {
@@ -263,33 +214,13 @@ fn reliable_action_delivery_processed() {
         .map(|(e, _)| e)
         .expect("resource node exists");
 
-    // Reset the node
-    if let Some(mut status) = server
-        .world_mut()
-        .get_mut::<resources::components::ResourceNodeStatus>(node_entity)
-    {
-        status.depleted = false;
-        status.respawn_timer = 0.0;
-    }
-    if let Some(mut rep) = server
-        .world_mut()
-        .get_mut::<game_protocol::ResourceNodeState>(node_entity)
-    {
-        rep.depleted = false;
-    }
-    // Reset cooldown and sequence
     let player_entity = server
         .world_mut()
         .query_filtered::<Entity, With<Player>>()
         .iter(server.world())
         .next()
         .expect("player exists");
-    if let Some(mut cd) = server
-        .world_mut()
-        .get_mut::<resources::components::InteractionCooldown>(player_entity)
-    {
-        cd.active = false;
-    }
+    reset_node_and_cooldown(&mut server, node_entity, player_entity);
 
     // Second collect should also succeed
     send_collect(&mut client, &mut server, 2, 0);
@@ -323,32 +254,13 @@ fn stale_sequence_rejected() {
         .find(|(_, n)| n.node_index == 0)
         .map(|(e, _)| e)
         .expect("node exists");
-    if let Some(mut status) = server
-        .world_mut()
-        .get_mut::<resources::components::ResourceNodeStatus>(node_entity)
-    {
-        status.depleted = false;
-        status.respawn_timer = 0.0;
-    }
-    if let Some(mut rep) = server
-        .world_mut()
-        .get_mut::<game_protocol::ResourceNodeState>(node_entity)
-    {
-        rep.depleted = false;
-    }
-    // Reset cooldown for the duplicate-sequence attempt
     let player_entity = server
         .world_mut()
         .query_filtered::<Entity, With<Player>>()
         .iter(server.world())
         .next()
         .expect("player exists");
-    if let Some(mut cd) = server
-        .world_mut()
-        .get_mut::<resources::components::InteractionCooldown>(player_entity)
-    {
-        cd.active = false;
-    }
+    reset_node_and_cooldown(&mut server, node_entity, player_entity);
 
     // Re-send sequence=1 (stale) — should be rejected
     send_collect(&mut client, &mut server, 1, 0);

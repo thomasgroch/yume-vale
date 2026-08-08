@@ -1,9 +1,11 @@
 //! Integration tests for authoritative resource collection.
 
+mod support;
+use support::{TICK, client_app, connect_client, send_identity_hello, step, wait_until};
+
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
-use core::time::Duration;
 use game_core::actions::ActionKind;
 use game_core::constants::INTERACT_RADIUS;
 use game_core::inventory::ItemKind;
@@ -15,22 +17,16 @@ use game_server::systems::{
     NextPlayerColor, ServerSystems, apply_client_input, handle_action_intent,
     handle_new_client_link, initialize_player_components, tick_player_cooldowns,
 };
-use lightyear::crossbeam::CrossbeamIo;
-use lightyear::prelude::client::{ClientPlugins, RawClient};
-use lightyear::prelude::server::{LinkOf, RawServer, ServerPlugins, Started};
+use lightyear::prelude::server::ServerPlugins;
 use lightyear::prelude::*;
 use player::{Player, PlayerPlugin};
 use resources::components::*;
 use resources::systems::spawn_resource_nodes;
 use resources::systems::tick_resource_respawn;
-use std::net::{Ipv4Addr, SocketAddr};
 
 // ---------------------------------------------------------------------------
-// Minimal test app (no SocialPlugin)
+// Minimal test app (no SocialPlugin) — differs from support::server_app
 // ---------------------------------------------------------------------------
-
-const TICK: Duration = Duration::from_millis(16);
-const MAX_FRAMES: usize = 400;
 
 fn server_app_minimal() -> App {
     let mut app = App::new();
@@ -64,78 +60,6 @@ fn server_app_minimal() -> App {
     app.world_mut()
         .spawn((RigidBody::Static, Collider::half_space(Vec3::Y)));
     app
-}
-
-fn client_app_minimal() -> App {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(StatesPlugin);
-    app.add_plugins(ClientPlugins {
-        tick_duration: TICK,
-    });
-    app.add_plugins((ProtocolPlugin, PlayerPlugin));
-    app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
-    app.finish();
-    app.world_mut()
-        .spawn(lightyear::prelude::PredictionManager::default());
-    app
-}
-
-fn connect_client_minimal(server: &mut App, client: &mut App, port: u16) {
-    let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
-    let (client_io, server_io) = CrossbeamIo::new_pair();
-    let se = server.world_mut().spawn_empty().id();
-    server
-        .world_mut()
-        .entity_mut(se)
-        .insert((RawServer, Started));
-    let _lo = server
-        .world_mut()
-        .spawn((LinkOf { server: se }, server_io, PeerAddr(addr)))
-        .id();
-    server.world_mut().trigger(LinkStart { entity: _lo });
-    let ce = client
-        .world_mut()
-        .spawn((RawClient, client_io, PeerAddr(addr), ReplicationReceiver))
-        .id();
-    client.world_mut().trigger(Connect { entity: ce });
-}
-
-fn step_minimal(server: &mut App, client: &mut App, frames: usize) {
-    for _ in 0..frames {
-        server.update();
-        client.update();
-    }
-}
-
-fn wait_until_minimal<F>(server: &mut App, client: &mut App, mut cond: F) -> bool
-where
-    F: FnMut(&mut App, &mut App) -> bool,
-{
-    for _ in 0..MAX_FRAMES {
-        if cond(server, client) {
-            return true;
-        }
-        step_minimal(server, client, 1);
-    }
-    cond(server, client)
-}
-
-fn send_identity_hello_minimal(server: &mut App, client: &mut App, token: &str) {
-    use game_protocol::channels::ReliableChannel;
-    use lightyear::prelude::MessageSender;
-
-    step_minimal(server, client, 10);
-    let mut query = client
-        .world_mut()
-        .query::<&mut MessageSender<game_protocol::IdentityHello>>();
-    if let Some(mut sender) = query.iter_mut(client.world_mut()).next() {
-        sender.send::<ReliableChannel>(game_protocol::IdentityHello {
-            protocol_version: game_protocol::PROTOCOL_ID as u32,
-            token: token.to_string(),
-        });
-    }
-    step_minimal(server, client, 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +110,7 @@ fn send_collect_intent(client: &mut App, server: &mut App, sequence: u64, target
         });
     }
 
-    step_minimal(server, client, 3);
+    step(server, client, 3);
 }
 
 /// Count the number of items of a given kind in the client's known inventory.
@@ -209,11 +133,11 @@ fn server_inventory_count(server: &mut App, kind: ItemKind) -> u32 {
 #[test]
 fn collect_adds_to_inventory() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30010);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30010);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok, "player should have spawned");
@@ -227,11 +151,11 @@ fn collect_adds_to_inventory() {
 #[test]
 fn collect_out_of_range_rejected() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30011);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30011);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok, "player should have spawned");
@@ -261,11 +185,11 @@ fn collect_out_of_range_rejected() {
 #[test]
 fn collect_depleted_node_rejected() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30012);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30012);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok, "player should have spawned");
@@ -282,11 +206,11 @@ fn collect_depleted_node_rejected() {
 #[test]
 fn collect_with_full_inventory_rejected() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30013);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30013);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok, "player should have spawned");
@@ -326,11 +250,11 @@ fn collect_with_full_inventory_rejected() {
 #[test]
 fn duplicate_sequence_rejected() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30014);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30014);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok, "player should have spawned");
@@ -385,11 +309,11 @@ fn duplicate_sequence_rejected() {
 #[test]
 fn cooldown_enforced_correctly() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30015);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30015);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok, "player should have spawned");
@@ -428,7 +352,7 @@ fn cooldown_enforced_correctly() {
     // Try collecting at ~0.4s (still inside 0.5s cooldown window)
     let ticks_040 = (0.4 / dt) as usize;
     for _ in 0..ticks_040 {
-        step_minimal(&mut server, &mut client, 1);
+        step(&mut server, &mut client, 1);
     }
     send_collect_intent(&mut client, &mut server, 2, 0);
     let count2 = server_inventory_count(&mut server, ItemKind::Resource(ResourceKind::Wood));
@@ -440,7 +364,7 @@ fn cooldown_enforced_correctly() {
     // Wait past 0.5s and try again
     let ticks_past = (0.15 / dt) as usize;
     for _ in 0..ticks_past {
-        step_minimal(&mut server, &mut client, 1);
+        step(&mut server, &mut client, 1);
     }
     send_collect_intent(&mut client, &mut server, 3, 0);
     let count3 = server_inventory_count(&mut server, ItemKind::Resource(ResourceKind::Wood));
@@ -450,11 +374,11 @@ fn cooldown_enforced_correctly() {
 #[test]
 fn inventory_snapshot_sent_on_collect() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30016);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30016);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok, "player should have spawned");
@@ -468,11 +392,11 @@ fn inventory_snapshot_sent_on_collect() {
 #[test]
 fn respawn_timer_restores_node() {
     let mut server = resource_server_app();
-    let mut client = client_app_minimal();
-    connect_client_minimal(&mut server, &mut client, 30017);
-    send_identity_hello_minimal(&mut server, &mut client, "");
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 30017);
+    send_identity_hello(&mut server, &mut client, "");
 
-    let ok = wait_until_minimal(&mut server, &mut client, |s, _c| {
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
         s.world_mut().query::<&Player>().iter(s.world()).count() >= 1
     });
     assert!(ok);
@@ -498,7 +422,7 @@ fn respawn_timer_restores_node() {
     // Node respawn_seconds=30, TICK=16ms → 30/0.016 ≈ 1875 frames.
     let needed = (30.0 / (TICK.as_secs_f64())) as usize + 10;
     for _ in 0..needed {
-        step_minimal(&mut server, &mut client, 1);
+        step(&mut server, &mut client, 1);
     }
 
     let status = server
