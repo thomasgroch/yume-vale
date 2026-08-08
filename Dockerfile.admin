@@ -1,16 +1,24 @@
 FROM node:22-alpine AS build
-WORKDIR /app
-COPY apps/admin/package*.json ./
-RUN npm ci
-COPY apps/admin/ .
-RUN npm run build
+# outputFileTracingRoot in next.config.js points two levels up from
+# apps/admin (the monorepo root) — that path must exist for real inside
+# the build context too, or standalone output nests server.js under a
+# different (wrong) directory than the one below expects.
+WORKDIR /repo
+COPY apps/admin/package*.json apps/admin/
+RUN npm ci --prefix apps/admin
+COPY apps/admin/ apps/admin/
+RUN npm run build --prefix apps/admin
 
 # Standalone Next.js output — no node_modules needed at runtime.
+# outputFileTracingRoot makes Next.js nest the standalone bundle under
+# apps/admin/ (mirroring its path from the monorepo root), not at the
+# standalone/ root — that's where server.js, its node_modules, and
+# package.json actually end up, fully self-contained.
 FROM node:22-alpine
 RUN addgroup --system yume && adduser --system --ingroup yume yume
 WORKDIR /app
-COPY --from=build /app/.next/standalone ./
-COPY --from=build /app/.next/static ./.next/static
+COPY --from=build /repo/apps/admin/.next/standalone/apps/admin/ ./
+COPY --from=build /repo/apps/admin/.next/static ./.next/static
 # Next.js standalone doesn't copy public/ automatically
 # COPY --from=build /app/public ./public
 USER yume
