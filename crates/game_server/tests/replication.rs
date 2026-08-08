@@ -23,8 +23,5 @@ fn replicated_player_has_prediction_marker() {
             .count()
             >= 1
     });
-    assert!(
-        ok,
-        "client player entity should have the Predicted marker"
-    );
+    assert!(ok, "client player entity should have the Predicted marker");
 }
