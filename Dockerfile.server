@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Dev profile on purpose: workspace dev sets deps opt-level=3, so the server
 # runs fast enough while building in a fraction of the time/RAM of release.
 FROM rust:1.96-bookworm AS chef
@@ -17,13 +18,22 @@ RUN apt-get update \
 COPY --from=planner /app/recipe.json recipe.json
 # Builds only third-party deps from the recipe — this layer is cached across
 # pushes as long as Cargo.lock doesn't change, instead of recompiling the
-# whole dependency tree (~440 crates) on every commit.
+# whole dependency tree (~440 crates) on every commit. The registry/target
+# cache mounts add incremental-compile caching on top, for pushes that only
+# change our own crates (Cargo.lock unchanged, deps layer alone wouldn't help).
 # Jobs=4: CI runners have 4 vCPU/16GB — dev profile (no LTO) has low enough
 # peak memory per unit that full parallelism doesn't risk OOM here (unlike
 # the release+LTO wasm client build, which stays throttled).
-RUN CARGO_BUILD_JOBS=4 cargo chef cook -p server --recipe-path recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    CARGO_BUILD_JOBS=4 cargo chef cook -p server --recipe-path recipe.json
 COPY . .
-RUN CARGO_BUILD_JOBS=4 cargo build -p server
+# Cache mounts aren't part of the final image layer, so the binary has to be
+# copied out to a normal path before the mount disappears.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    CARGO_BUILD_JOBS=4 cargo build -p server \
+ && cp target/debug/server /tmp/yume-server
 
 FROM debian:bookworm-slim
 # Linked (not dlopened) by wayland-sys/libudev-sys, so required even headless.
@@ -31,7 +41,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libwayland-client0 libudev1 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system yume
-COPY --from=build /app/target/debug/server /usr/local/bin/yume-server
+COPY --from=build /tmp/yume-server /usr/local/bin/yume-server
 USER yume
 EXPOSE 5000/udp 5001/udp 5002/tcp
 CMD ["yume-server"]
