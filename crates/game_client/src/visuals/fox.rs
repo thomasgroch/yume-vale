@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use game_core::constants::{RUN_SPEED, WALK_SPEED};
 use game_protocol::{PlayerColor, PlayerPosition};
-use lightyear::prelude::Interpolated;
+use lightyear::prelude::{Interpolated, Predicted};
 use player::{LocalPlayer, Player};
 
 use crate::connection::LocalPlayerId;
@@ -93,12 +93,20 @@ type UnvisualizedPlayers<'w, 's> = Query<
         &'static PlayerColor,
         &'static PlayerPosition,
     ),
-    (With<Interpolated>, Without<FoxAnimation>),
+    (
+        Or<(With<Interpolated>, With<Predicted>)>,
+        Without<FoxAnimation>,
+    ),
 >;
 
 /// Attaches the fox scene to any player entity that arrives via Lightyear
-/// replication (marked with `Interpolated`) but does not yet have
-/// `FoxAnimation`. The scene goes on a pivot child offset down to the ground
+/// replication — marked `Interpolated` for remote players, or `Predicted`
+/// for the local player's own entity (the server sends exactly one of the
+/// two per client, never both) — but does not yet have `FoxAnimation`.
+/// Without matching both markers here, the local player's own character
+/// never gets a mesh, a `Transform`, or the `LocalPlayer` tag the camera
+/// needs to follow it.
+/// The scene goes on a pivot child offset down to the ground
 /// (the entity origin rides at the physics float height). Also inserts the
 /// `Transform` that replicated entities lack, seeded from the replicated
 /// `PlayerPosition`.
@@ -726,6 +734,43 @@ mod tests {
         assert!(
             app.world().get::<LocalPlayer>(entity).is_some(),
             "local player should get LocalPlayer marker"
+        );
+    }
+
+    /// The real server never sends both markers to the same client — the
+    /// owning client gets `Predicted`, everyone else sees that player as
+    /// `Interpolated` (see auth.rs's PredictionTarget/InterpolationTarget
+    /// split). This regression-tests the actual production shape: without
+    /// matching `Predicted` in `UnvisualizedPlayers`, the local player's own
+    /// entity — Predicted, never Interpolated — silently never gets a mesh,
+    /// a Transform, or the LocalPlayer tag the camera needs.
+    #[test]
+    fn attach_player_visuals_marks_local_player_when_predicted() {
+        let mut app = attach_app(Some(PlayerId::new(1)));
+
+        let entity = app
+            .world_mut()
+            .spawn((
+                Player {
+                    id: PlayerId::new(1),
+                },
+                PlayerColor(0),
+                Predicted,
+                PlayerPosition(Vec3::ZERO),
+            ))
+            .id();
+        app.update();
+
+        let children = app.world().get::<Children>(entity).unwrap();
+        assert!(
+            children
+                .iter()
+                .any(|child| app.world().get::<WorldAssetRoot>(child).is_some()),
+            "predicted local player should get the fox scene on a pivot child"
+        );
+        assert!(
+            app.world().get::<LocalPlayer>(entity).is_some(),
+            "predicted local player should get LocalPlayer marker"
         );
     }
 
