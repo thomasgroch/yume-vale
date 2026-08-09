@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: ghcr.io/thomasgroch/yume-vale-client:sha-06a829af737e2bb9846b7f83151f813db0a02e4a
+          image: ghcr.io/thomasgroch/yume-vale-client:sha-fe2ccdd874febb47a40df518f0b0e4404c20b729
           imagePullPolicy: Always
           ports:
             - name: http
