@@ -80,7 +80,7 @@ pub(crate) struct TransportState {
 impl Default for TransportState {
     fn default() -> Self {
         Self {
-            mode: select_transport_mode(false, true),
+            mode: select_transport_mode(false, true, true),
             wt_start: None,
             rejection_received: false,
             rejection_reason: None,
@@ -126,7 +126,7 @@ impl TransportState {
         let wt_available = window.as_ref().is_some_and(|window| {
             js_sys::Reflect::has(window.as_ref(), &"WebTransport".into()).unwrap_or(false)
         });
-        let mode = select_transport_mode(explicit_ws_override, wt_available);
+        let mode = select_transport_mode(explicit_ws_override, wt_available, page_is_local);
 
         Self {
             mode,
@@ -166,11 +166,21 @@ impl TransportState {
     }
 }
 
+/// `page_is_local` matters because `derive_wasm_addr` only produces a
+/// parseable `SocketAddr` (required by the netcode `Authentication::Manual`
+/// token) when local — it falls back to `{template}` (e.g. "127.0.0.1:5001"),
+/// a literal IP. On a real deployment it instead builds `{hostname}:{port}`
+/// (e.g. "yume.example.com:5001"), which `SocketAddr::parse` always rejects
+/// (no DNS resolution). That failure happens before any connection attempt,
+/// so the WT→WS timeout/rejection fallback never even triggers — the client
+/// silently ends up with no connection entity at all. Skip straight to WS
+/// whenever the host isn't a literal-IP-compatible local address.
 pub(crate) fn select_transport_mode(
     explicit_ws_override: bool,
     wt_available: bool,
+    page_is_local: bool,
 ) -> TransportMode {
-    if explicit_ws_override || !wt_available {
+    if explicit_ws_override || !wt_available || !page_is_local {
         TransportMode::WebSocket
     } else {
         TransportMode::WebTransport

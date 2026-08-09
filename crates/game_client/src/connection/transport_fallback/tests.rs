@@ -32,14 +32,28 @@ fn transport_state_default() {
 #[test]
 fn transport_selection_skips_wt_when_api_is_absent() {
     assert_eq!(
-        select_transport_mode(false, false),
+        select_transport_mode(false, false, true),
         TransportMode::WebSocket
     );
     assert_eq!(
-        select_transport_mode(false, true),
+        select_transport_mode(false, true, true),
         TransportMode::WebTransport
     );
-    assert_eq!(select_transport_mode(true, true), TransportMode::WebSocket);
+    assert_eq!(
+        select_transport_mode(true, true, true),
+        TransportMode::WebSocket
+    );
+}
+
+#[test]
+fn transport_selection_skips_wt_on_non_local_host() {
+    // Real deployments use a DNS hostname, which derive_wasm_addr can't turn
+    // into a parseable SocketAddr for the WT netcode token — must go
+    // straight to WS regardless of WT API availability.
+    assert_eq!(
+        select_transport_mode(false, true, false),
+        TransportMode::WebSocket
+    );
 }
 
 #[test]
