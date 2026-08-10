@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: admin
-          image: ghcr.io/thomasgroch/yume-vale-admin:sha-1cccb8468055254c7f4e856a5f798e0f67575177
+          image: ghcr.io/thomasgroch/yume-vale-admin:sha-b64fc8ee8d44819ad1d8bedbbcb06f9de9b53c1d
           imagePullPolicy: Always
           ports:
             - name: http
