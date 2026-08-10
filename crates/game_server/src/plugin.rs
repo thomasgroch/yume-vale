@@ -54,6 +54,33 @@ impl Plugin for ServerPlugin {
         app.init_resource::<NextPlayerColor>();
         app.init_resource::<PersistenceCoordinator>();
 
+        // Wire persistence from config/env var.
+        // The config field takes precedence; if unset, falls back to
+        // YUME_DATABASE_URL. If neither is set, the server runs with
+        // ephemeral (non-persistent) player data — see the "no persistence
+        // configured" log lines in systems/auth.rs and systems/collect.rs.
+        {
+            let env_db_url = std::env::var("YUME_DATABASE_URL").ok();
+            let db_url =
+                persistence::resolve_db_url(self.config.db_url.as_deref(), env_db_url.as_deref());
+            match db_url {
+                Some(db_url) => match persistence::spawn_persistence(&db_url) {
+                    Ok(resource) => {
+                        app.insert_resource(resource);
+                        tracing::info!("persistence enabled");
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to start persistence: {e}");
+                    }
+                },
+                None => {
+                    tracing::info!(
+                        "YUME_DATABASE_URL not set — running with ephemeral (non-persistent) player data"
+                    );
+                }
+            }
+        }
+
         // Wire TLS identity loading from config/env vars.
         // The config fields take precedence; if both are None the TlsConfig
         // falls back to YUME_TLS_CERT / YUME_TLS_KEY env vars, then self-signed.

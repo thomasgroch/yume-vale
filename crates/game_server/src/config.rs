@@ -22,6 +22,12 @@ pub struct ServerConfig {
     /// Port for the read-only admin HTTP/WebSocket API.
     /// Requires `YUME_ADMIN_TOKEN` env var to be set; otherwise the port is not bound.
     pub admin_port: u16,
+    /// SQLx connection string for the persistence backend
+    /// (`sqlite:...` or `postgres://...`).
+    /// When `None`, falls back to the `YUME_DATABASE_URL` env var. When
+    /// neither is set, the server runs with ephemeral (non-persistent)
+    /// player data.
+    pub db_url: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -36,6 +42,7 @@ impl Default for ServerConfig {
             tls_cert_path: None,
             tls_key_path: None,
             admin_port: 5003,
+            db_url: None,
         }
     }
 }
