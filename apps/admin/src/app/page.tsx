@@ -4,13 +4,34 @@ import { useEffect, useRef, useState } from "react";
 import LoginGate, { SESSION_KEY } from "@/components/LoginGate";
 import PlayerList from "@/components/PlayerList";
 import LiveMap from "@/components/LiveMap";
-import { AdminPlayer, AdminEvent, GameAdminWS, fetchSnapshot, logout } from "@/lib/game-ws";
+import {
+  AdminPlayer,
+  AdminEvent,
+  GameAdminWS,
+  UnauthorizedError,
+  fetchSnapshot,
+  logout,
+} from "@/lib/game-ws";
 
 // ---------------------------------------------------------------------------
 // Dashboard (rendered after successful login)
 // ---------------------------------------------------------------------------
 
-function Dashboard({ token }: { token: string }) {
+// How often to re-check the session is still valid via REST. The WebSocket
+// alone can't tell us *why* it's failing to connect (the browser WebSocket
+// API doesn't expose the HTTP status of a rejected upgrade), so a session
+// that dies mid-view — e.g. a deploy restarts the server, wiping its
+// in-memory session store — would otherwise just hang on "conectando..."
+// forever instead of bouncing back to login.
+const SESSION_CHECK_INTERVAL_MS = 15_000;
+
+function Dashboard({
+  token,
+  onUnauthorized,
+}: {
+  token: string;
+  onUnauthorized: () => void;
+}) {
   const [players, setPlayers] = useState<AdminPlayer[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
@@ -20,10 +41,19 @@ function Dashboard({ token }: { token: string }) {
   useEffect(() => {
     let mounted = true;
 
-    // Pre-load via REST while WS connects
-    fetchSnapshot(token)
-      .then((p) => { if (mounted) setPlayers(p); })
-      .catch(() => {});
+    function checkSession() {
+      fetchSnapshot(token)
+        .then((p) => { if (mounted) setPlayers(p); })
+        .catch((err) => {
+          if (err instanceof UnauthorizedError) onUnauthorized();
+        });
+    }
+
+    // Pre-load via REST while WS connects, then keep re-checking so a
+    // session that dies mid-view is caught too, not just a stale one from
+    // a previous visit.
+    checkSession();
+    const sessionCheckTimer = setInterval(checkSession, SESSION_CHECK_INTERVAL_MS);
 
     const ws = new GameAdminWS(token);
     wsRef.current = ws;
@@ -54,10 +84,11 @@ function Dashboard({ token }: { token: string }) {
 
     return () => {
       mounted = false;
+      clearInterval(sessionCheckTimer);
       unsub();
       ws.disconnect();
     };
-  }, [token]);
+  }, [token, onUnauthorized]);
 
   const selectedPlayer = players.find((p) => p.player_id === selected) ?? null;
 
@@ -136,5 +167,11 @@ function Dashboard({ token }: { token: string }) {
 // ---------------------------------------------------------------------------
 
 export default function AdminPage() {
-  return <LoginGate>{(token) => <Dashboard token={token} />}</LoginGate>;
+  return (
+    <LoginGate>
+      {(token, invalidateSession) => (
+        <Dashboard token={token} onUnauthorized={invalidateSession} />
+      )}
+    </LoginGate>
+  );
 }

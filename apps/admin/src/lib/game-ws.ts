@@ -68,11 +68,22 @@ export class GameAdminWS {
   }
 }
 
-// Fetch the current REST snapshot (used for initial load without WS).
+// Thrown by fetchSnapshot when the session token is missing/expired/revoked,
+// so callers can distinguish "log in again" from a transient network error.
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
+// Fetch the current REST snapshot (used for initial load without WS, and
+// for periodic session-liveness checks — see Dashboard's useEffect).
 export async function fetchSnapshot(token: string): Promise<AdminPlayer[]> {
   const res = await fetch("/api/admin/v1/players", {
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (res.status === 401) throw new UnauthorizedError();
   if (!res.ok) throw new Error(`${res.status}`);
   const data = await res.json();
   return data.players ?? [];

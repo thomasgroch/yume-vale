@@ -5,7 +5,11 @@ import { login } from "@/lib/game-ws";
 export const SESSION_KEY = "yume_admin_session";
 
 interface Props {
-  children: (token: string) => React.ReactNode;
+  // invalidateSession: call when the server rejects the token (expired —
+  // every deploy restarts the server and wipes its in-memory session
+  // store — or explicitly revoked). Clears storage and returns to login
+  // instead of the UI hanging on a token that will never work again.
+  children: (token: string, invalidateSession: () => void) => React.ReactNode;
 }
 
 export default function LoginGate({ children }: Props) {
@@ -19,6 +23,12 @@ export default function LoginGate({ children }: Props) {
     const stored = sessionStorage.getItem(SESSION_KEY);
     if (stored) setToken(stored);
   }, []);
+
+  function invalidateSession() {
+    sessionStorage.removeItem(SESSION_KEY);
+    setToken(null);
+    setError("Sessão expirada (o servidor reiniciou) — faça login novamente.");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,7 +45,7 @@ export default function LoginGate({ children }: Props) {
     }
   }
 
-  if (token) return <>{children(token)}</>;
+  if (token) return <>{children(token, invalidateSession)}</>;
 
   return (
     <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center" }}>
