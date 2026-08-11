@@ -26,6 +26,7 @@ use lightyear::prelude::*;
 use player::{PlayerPhysicsBundle, spawn_player};
 use tracing::{info, warn};
 
+use super::input::InputFreshness;
 use crate::config::ServerConfig;
 
 use super::connection::{ClientPlayer, NextPlayerColor, ServerConfigResource};
@@ -235,6 +236,10 @@ pub fn handle_identity_hello(
             commands
                 .entity(player_entity)
                 .insert(PlayerPhysicsBundle::default());
+
+            commands
+                .entity(player_entity)
+                .insert(InputFreshness::default());
         }
     }
 }
