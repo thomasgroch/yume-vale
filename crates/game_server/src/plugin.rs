@@ -124,7 +124,12 @@ impl Plugin for ServerPlugin {
         app.add_observer(attach_housing_player);
         app.add_systems(
             FixedUpdate,
-            auth::handle_identity_hello.in_set(ServerSystems),
+            (
+                auth::handle_identity_hello,
+                apply_client_input,
+                stop_stale_player_input,
+            )
+                .in_set(ServerSystems),
         );
 
         app.configure_sets(FixedUpdate, player::PlayerMovementSet.after(ServerSystems));
