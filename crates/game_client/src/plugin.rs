@@ -29,9 +29,9 @@ use crate::graphics::{
 };
 use crate::hud::{
     ClientActionFeedback, ClientCooldown, ClientInventory, clear_action_feedback,
-    dismiss_rejection_modal, receive_action_rejected, receive_inventory_snapshot, reconnect_button,
-    spawn_hud, spawn_inventory_panel, sync_rejection_modal, tick_cooldown, toggle_gameplay_panels,
-    update_hud_status, update_inventory_panel, update_version_text,
+    dismiss_rejection_modal, open_commit_link, receive_action_rejected, receive_inventory_snapshot,
+    reconnect_button, spawn_hud, spawn_inventory_panel, sync_rejection_modal, tick_cooldown,
+    toggle_gameplay_panels, update_hud_status, update_inventory_panel, update_version_text,
 };
 use crate::input::{InputState, gather_input};
 use crate::loading;
@@ -47,10 +47,10 @@ use crate::ui::{
 };
 use crate::visuals::{
     BuildMode, ClientBonds, animate_foxes, attach_creature_visuals, attach_decoration_visuals,
-    attach_player_visuals, build_controls_ui, handle_action_rejected, handle_bond_snapshot,
-    mark_local_player_visuals, send_wave_emote, setup_fox_animators, show_bond_display,
-    show_feed_prompt, spawn_plot_boundaries, sync_position_to_transform, toggle_build_mode,
-    trigger_wave_from_emote, update_plot_owner_indicators,
+    attach_player_visuals, build_controls_ui, diag_player_components, handle_action_rejected,
+    handle_bond_snapshot, mark_local_player_visuals, send_wave_emote, setup_fox_animators,
+    show_bond_display, show_feed_prompt, spawn_plot_boundaries, sync_position_to_transform,
+    toggle_build_mode, trigger_wave_from_emote, update_plot_owner_indicators,
 };
 
 #[derive(Default)]
@@ -110,6 +110,7 @@ impl Plugin for ClientPlugin {
         app.add_systems(
             Startup,
             (
+                crate::fonts::install_default_font,
                 spawn_camera,
                 spawn_ground,
                 spawn_decorations,
@@ -131,6 +132,7 @@ impl Plugin for ClientPlugin {
                 handle_connection_rejected,
                 send_identity_hello,
                 attach_player_visuals,
+                diag_player_components,
                 setup_fox_animators,
                 mark_local_player_visuals,
                 attach_creature_visuals,
@@ -172,6 +174,7 @@ impl Plugin for ClientPlugin {
                 handle_transport_fallback,
                 update_hud_status,
                 update_version_text,
+                open_commit_link,
                 reconnect_button,
                 play_button,
                 play_button_hover,

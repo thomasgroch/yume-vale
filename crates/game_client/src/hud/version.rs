@@ -1,5 +1,8 @@
 use bevy::prelude::*;
 
+/// Base URL for the commit link the version text opens when clicked.
+const REPO_URL: &str = "https://github.com/thomasgroch/yume-vale";
+
 #[derive(Component)]
 pub struct VersionText;
 
@@ -26,13 +29,44 @@ pub fn update_version_text(
     }
 }
 
+/// Opens the commit's GitHub page when the version text is clicked.
+/// No-op on native (no browser to open a URL in).
+pub fn open_commit_link(
+    interactions: Query<&Interaction, (Changed<Interaction>, With<VersionText>)>,
+) {
+    for interaction in &interactions {
+        if *interaction == Interaction::Pressed {
+            open_commit_url();
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn open_commit_url() {
+    if let Some(window) = web_sys::window() {
+        let url = commit_url();
+        let _ = window.open_with_url_and_target(&url, "_blank");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn open_commit_url() {
+    info!("commit link: {}", commit_url());
+}
+
+fn commit_url() -> String {
+    format!("{REPO_URL}/commit/{}", env!("YUME_GIT_FULL_HASH"))
+}
+
 fn version_label() -> String {
+    let branch = env!("YUME_GIT_BRANCH");
+    let hash = env!("YUME_GIT_HASH");
     let ts: u64 = env!("YUME_GIT_TS").parse().unwrap_or(0);
     if ts == 0 {
-        return env!("YUME_GIT_HASH").to_string();
+        return format!("{branch} @ {hash}");
     }
     let age = format_age(now_unix().saturating_sub(ts));
-    format!("{} | {age}", env!("YUME_GIT_HASH"))
+    format!("{branch} @ {hash} | {age}")
 }
 
 fn format_age(secs: u64) -> String {
@@ -92,14 +126,13 @@ mod tests {
             .world_mut()
             .query_filtered::<&Text, With<VersionText>>()
             .single(app.world())
-            .unwrap();
+            .unwrap()
+            .0
+            .clone();
+        assert!(!text.is_empty(), "version text is populated on first frame");
         assert!(
-            !text.0.is_empty(),
-            "version text is populated on first frame"
-        );
-        assert!(
-            text.0.contains("45a972e") || text.0.contains('|'),
-            "version text contains the commit hash and age"
+            text.contains('@'),
+            "version text contains 'branch @ hash', got: {text}"
         );
     }
 
@@ -109,5 +142,23 @@ mod tests {
         assert_eq!(format_age(600), "ha 10min");
         assert_eq!(format_age(7200), "ha 2h");
         assert_eq!(format_age(172800), "ha 2d");
+    }
+
+    #[test]
+    fn commit_url_points_at_the_full_hash_on_github() {
+        let url = commit_url();
+        assert!(url.starts_with("https://github.com/thomasgroch/yume-vale/commit/"));
+        assert!(url.ends_with(env!("YUME_GIT_FULL_HASH")));
+    }
+
+    #[test]
+    fn open_commit_link_only_reacts_to_press() {
+        let mut app = App::new();
+        app.add_systems(Update, open_commit_link);
+        app.world_mut().spawn((VersionText, Interaction::Hovered));
+        // Should not panic on non-Pressed interactions; nothing else to
+        // assert since the URL-opening side effect isn't observable in a
+        // headless test on native (open_commit_url just logs there).
+        app.update();
     }
 }

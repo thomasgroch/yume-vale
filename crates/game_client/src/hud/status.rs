@@ -54,6 +54,7 @@ pub fn spawn_hud(mut commands: Commands) {
                 });
         });
     commands.spawn((
+        Button,
         Text::new(""),
         widgets::text_font(theme::FONT_XS),
         TextColor(theme::TEXT_DIM),
@@ -63,7 +64,9 @@ pub fn spawn_hud(mut commands: Commands) {
             right: Val::Px(theme::SPACE_10),
             ..default()
         },
-        ZIndex(-1),
+        // Above the menu's full-screen background (default z=0) so it stays
+        // visible before connecting, not just once in-game.
+        ZIndex(10),
         super::version::VersionText,
     ));
 }
