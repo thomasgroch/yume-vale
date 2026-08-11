@@ -145,3 +145,16 @@ jobs:
           git add deploy/10-server.yaml deploy/20-client.yaml deploy/50-admin.yaml
           git commit -m "deploy: pin images to sha-${{ github.sha }} [skip ci]" || exit 0
           git push
+
+  # Discord notification — always runs, reports success or failure of the pipeline.
+  # Builds the JSON payload with jq (not string interpolation) so a commit
+  # message with quotes/newlines can't produce malformed JSON.
+  notify:
+    needs: [check, wasm, build, rollout]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          STATUS="${{ contains(needs.*.result, 'failure') && '❌ falhou' || '✅ sucesso' }}"
+          jq -n --arg s "Yume Vale deploy: $STATUS — sha-${GITHUB_SHA:0:7}" '{content: $s}' \
+            | curl -sf -X POST -H "Content-Type: application/json" -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}"
