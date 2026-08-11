@@ -96,8 +96,7 @@ fn hash_admin_password() {
     use argon2::Argon2;
     use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
 
-    let password =
-        rpassword::prompt_password("Admin password: ").expect("failed to read password");
+    let password = rpassword::prompt_password("Admin password: ").expect("failed to read password");
     let confirm =
         rpassword::prompt_password("Confirm password: ").expect("failed to read password");
 

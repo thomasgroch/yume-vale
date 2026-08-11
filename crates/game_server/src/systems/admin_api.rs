@@ -541,7 +541,12 @@ mod tests {
 
         assert!(check_credentials("admin", &hash, "admin", "hunter2"));
         assert!(!check_credentials("admin", &hash, "admin", "wrong"));
-        assert!(!check_credentials("admin", &hash, "someone-else", "hunter2"));
+        assert!(!check_credentials(
+            "admin",
+            &hash,
+            "someone-else",
+            "hunter2"
+        ));
         assert!(!check_credentials("admin", &hash, "someone-else", "wrong"));
     }
 
@@ -582,6 +587,10 @@ mod tests {
         let store = SessionStore::default();
         store.insert_for_test("stale", Instant::now() - Duration::from_secs(1));
         store.issue();
-        assert_eq!(store.sessions.read().unwrap().len(), 1, "stale entry should be swept");
+        assert_eq!(
+            store.sessions.read().unwrap().len(),
+            1,
+            "stale entry should be swept"
+        );
     }
 }
