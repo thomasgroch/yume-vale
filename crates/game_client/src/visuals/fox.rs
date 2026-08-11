@@ -370,16 +370,31 @@ pub fn mark_local_player_visuals(
     }
 }
 
-type InterpolatedPlayers<'w, 's> =
-    Query<'w, 's, (&'static PlayerPosition, &'static mut Transform), With<Interpolated>>;
+type InterpolatedPlayers<'w, 's> = Query<
+    'w,
+    's,
+    (&'static PlayerPosition, &'static mut Transform),
+    Or<(With<Interpolated>, With<Predicted>)>,
+>;
 
-/// Copies `PlayerPosition` → `Transform.translation` for interpolated entities,
-/// chasing the interpolated value with an exponential smoothing
-/// (`RENDER_SMOOTHING`) instead of snapping. Linear 30Hz interpolation
-/// advances in bursts whenever the velocity changes (accelerate/stop/turn),
-/// and teleports when the timeline finishes syncing after spawn — the chase
-/// absorbs both into continuous motion. On network underruns the fox simply
-/// decelerates and resumes smoothly.
+/// Copies `PlayerPosition` → `Transform.translation` for both interpolated
+/// (remote) and predicted (local) players, chasing the target value with an
+/// exponential smoothing (`RENDER_SMOOTHING`) instead of snapping. Linear
+/// 30Hz interpolation advances in bursts whenever the velocity changes
+/// (accelerate/stop/turn), and teleports when the timeline finishes syncing
+/// after spawn — the chase absorbs both into continuous motion. On network
+/// underruns the fox simply decelerates and resumes smoothly.
+///
+/// There is no client-side physics (the `player` crate's `physics` feature
+/// is server-only — see `crates/features/player/Cargo.toml`), so the local
+/// player's own `Predicted` entity has no other system driving its
+/// `Transform`. Without matching `Predicted` here too, the local player's
+/// character freezes at its spawn position forever — `attach_player_visuals`
+/// seeds `Transform` once, but this system is the only thing that ever
+/// updates it again, and the camera (`follow_local_player`) reads the same
+/// frozen `Transform`, so the whole view appears static. This is the same
+/// `Interpolated`-only filter bug as the one fixed for `attach_player_visuals`
+/// in 1cccb84, just in the sibling system that fix didn't touch.
 /// Runs in PostUpdate, chained before `animate_foxes`/`follow_local_player`.
 pub fn sync_position_to_transform(time: Res<Time>, mut query: InterpolatedPlayers) {
     let dt = time.delta_secs();
@@ -1169,6 +1184,47 @@ mod tests {
         assert!(
             (t.translation.x - target.x).abs() < 0.1,
             "expected ~{}, got {:?}",
+            target.x,
+            t.translation
+        );
+    }
+
+    /// The real server never sends `Interpolated` to the owning client —
+    /// only `Predicted` (see auth.rs's PredictionTarget/InterpolationTarget
+    /// split, same as `attach_player_visuals_marks_local_player_when_predicted`
+    /// above). This regression-tests the actual production shape: without
+    /// matching `Predicted` in `sync_position_to_transform`, the local
+    /// player's `Transform` is seeded once at spawn by `attach_player_visuals`
+    /// and never updated again as `PlayerPosition` keeps changing — the
+    /// character (and the camera that follows it) freezes in place forever.
+    #[test]
+    fn sync_position_converges_for_predicted_local_player() {
+        let mut app = App::new();
+        app.init_resource::<Time>();
+        app.add_systems(Update, sync_position_to_transform);
+
+        let target = Vec3::new(10.0, 0.0, 0.0);
+        let entity = app
+            .world_mut()
+            .spawn((
+                LocalPlayer,
+                PlayerPosition(target),
+                Transform::from_translation(Vec3::ZERO),
+                Predicted,
+            ))
+            .id();
+
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs_f32(0.1));
+            app.update();
+        }
+
+        let t = app.world().get::<Transform>(entity).unwrap();
+        assert!(
+            (t.translation.x - target.x).abs() < 0.1,
+            "predicted local player's transform must track PlayerPosition, expected ~{}, got {:?}",
             target.x,
             t.translation
         );
