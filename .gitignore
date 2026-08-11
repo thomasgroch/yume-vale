@@ -24,3 +24,8 @@ apps/client/dist/
 
 # Local SQLite database (default path for game_persistence)
 /data/
+
+# apps/admin (Next.js)
+node_modules/
+apps/admin/.next/
+apps/admin/tsconfig.tsbuildinfo

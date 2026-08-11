@@ -44,7 +44,7 @@ Notas do build do cliente (`Dockerfile.client`):
 | 5000 | UDP | netcode (clientes nativos) | Service `yume-server-udp` tipo LoadBalancer (ServiceLB do k3s) |
 | 5001 | UDP/QUIC | WebTransport (browser) | Service `yume-server-udp` tipo LoadBalancer (ServiceLB do k3s) |
 | 5002 | TCP | WebSocket (browser) | ClusterIP `yume-server` → Ingress `/ws` |
-| 5003 | TCP | Admin HTTP/WS API | ClusterIP `yume-server` → Ingress `/api/admin` (requer `YUME_ADMIN_TOKEN`) |
+| 5003 | TCP | Admin HTTP/WS API | ClusterIP `yume-server` → Ingress `/api/admin` (requer `YUME_ADMIN_USER` + `YUME_ADMIN_PASSWORD_HASH`) |
 
 Ingress (Traefik + cert-manager, issuer `letsencrypt-prod`, secret `yume-tls`):
 
@@ -110,12 +110,16 @@ Painel de observabilidade em **`/admin`** — lista jogadores online, posições
 
 ### Ativar
 
-O servidor **não** abre a porta 5003 a menos que `YUME_ADMIN_TOKEN` esteja definido:
+O servidor **não** abre a porta 5003 a menos que `YUME_ADMIN_USER` e `YUME_ADMIN_PASSWORD_HASH` estejam definidos. A senha nunca é armazenada em texto puro — só o hash Argon2id:
 
 ```bash
-# Recuperar token do Bitwarden e criar o secret
-TOKEN=$(bw get password "yume-vale — YUME_ADMIN_TOKEN")
-kubectl create secret generic yume-admin -n yume-vale --from-literal=token="$TOKEN"
+# Gera o hash interativamente (prompt, sem eco no terminal)
+HASH=$(cargo xtask tools hash-admin-password)
+
+# Guardar usuário + hash no Bitwarden, depois criar o secret
+kubectl create secret generic yume-admin -n yume-vale \
+  --from-literal=username="$(bw get username "yume-vale — admin")" \
+  --from-literal=password_hash="$HASH"
 ```
 
 O Secret é `optional: true` no Deployment — sem ele o servidor sobe normalmente, apenas sem o admin API.
@@ -124,15 +128,19 @@ O Secret é `optional: true` no Deployment — sem ele o servidor sobe normalmen
 
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
-| GET | `/api/admin/v1/health` | nenhuma | liveness probe |
-| GET | `/api/admin/v1/players` | `Authorization: Bearer <token>` | snapshot JSON |
-| WS  | `/api/admin/v1/live` | `?token=<token>` | stream de eventos em tempo real |
+| GET  | `/api/admin/v1/health` | nenhuma | liveness probe |
+| POST | `/api/admin/v1/login` | `{"username","password"}` no body | troca credenciais por um token de sessão (`{"token"}`), TTL 12h |
+| POST | `/api/admin/v1/logout` | `Authorization: Bearer <token>` | revoga o token de sessão |
+| GET  | `/api/admin/v1/players` | `Authorization: Bearer <token>` | snapshot JSON |
+| WS   | `/api/admin/v1/live` | `?token=<token>` | stream de eventos em tempo real |
+
+O `<token>` usado em `players`/`live` é o token de **sessão** retornado por `/login` — nunca a senha em si. Sessões ficam em memória no processo do servidor (perdidas em restart, exigindo novo login).
 
 Via Ingress: `https://yume.lab.thomasdev.xyz/api/admin/...` → `yume-server:5003`
 
 ### Acesso
 
-`https://yume.lab.thomasdev.xyz/admin` — solicita o token na primeira visita (guardado em `sessionStorage`).
+`https://yume.lab.thomasdev.xyz/admin` — solicita usuário e senha na primeira visita; o token de sessão retornado fica em `sessionStorage` (nunca a senha).
 
 ### Arquivos
 
@@ -142,13 +150,15 @@ Via Ingress: `https://yume.lab.thomasdev.xyz/api/admin/...` → `yume-server:500
 | `deploy/50-admin.yaml` | Deployment + Service (`yume-admin:3001`) |
 | `deploy/30-ingress.yaml` | Middleware `strip-admin` + Ingress `/admin` e `/api/admin` |
 | `apps/admin/` | Next.js 15 + Jazz v2 alpha SDK |
-| `crates/game_server/src/systems/admin_api.rs` | Plugin axum no servidor Bevy |
+| `crates/game_server/src/systems/admin_api.rs` | Plugin axum no servidor Bevy — login, sessões, snapshot/live |
+| `apps/tools` (`hash-admin-password`) | Gera o hash Argon2id da senha do admin |
 
 ### Operação
 
 - **Logs**: `kubectl logs -n yume-vale deploy/yume-admin -f`
-- **Revogar token**: `kubectl delete secret yume-admin -n yume-vale` (servidor desativa o API automaticamente; pod não reinicia)
-- **Rotacionar token**: gerar novo → atualizar bw → `kubectl create secret generic yume-admin -n yume-vale --from-literal=token="$NOVO" --dry-run=client -o yaml | kubectl apply -f -`
+- **Desativar o painel**: `kubectl delete secret yume-admin -n yume-vale` (servidor desativa o API automaticamente; pod não reinicia)
+- **Trocar a senha**: gerar novo hash → atualizar bw → `kubectl create secret generic yume-admin -n yume-vale --from-literal=username="$USER" --from-literal=password_hash="$NOVO_HASH" --dry-run=client -o yaml | kubectl apply -f -` → reinicia o pod do servidor (sessões antigas ficam inválidas junto)
+- **Derrubar uma sessão específica sem trocar a senha**: não há endpoint de admin para isso hoje — a sessão expira sozinha em 12h, ou reinicie o pod do servidor para invalidar todas de uma vez
 
 ## Variáveis de ambiente
 
@@ -161,7 +171,8 @@ Via Ingress: `https://yume.lab.thomasdev.xyz/api/admin/...` → `yume-server:500
 | `YUME_TLS_KEY` | server (env via Deployment) | caminho para a chave PKCS#8 (produção: `/etc/yume-tls/tls.key`) |
 | `YUME_DATABASE_URL` | server (env via Secret) | PostgreSQL connection string |
 | `RUST_LOG` | server | filtro tracing (default `info`) |
-| `YUME_ADMIN_TOKEN` | server (env via Secret `yume-admin`) | ativa o admin API na porta 5003; se ausente, porta não é aberta |
+| `YUME_ADMIN_USER` | server (env via Secret `yume-admin`) | usuário de login do admin panel |
+| `YUME_ADMIN_PASSWORD_HASH` | server (env via Secret `yume-admin`) | hash Argon2id da senha (gerar com `cargo xtask tools hash-admin-password`); junto com `YUME_ADMIN_USER` ativa a porta 5003 — se algum estiver ausente, a porta não é aberta |
 
 ## Operação
 
