@@ -6,6 +6,7 @@ pub mod connection;
 pub mod debug;
 pub mod decorations;
 pub mod flow;
+pub(crate) mod fonts;
 pub mod graphics;
 pub mod hud;
 pub mod input;

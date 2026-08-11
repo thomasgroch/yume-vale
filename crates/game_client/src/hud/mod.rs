@@ -15,7 +15,7 @@ pub use snapshot::{
     tick_cooldown,
 };
 pub(crate) use status::{reconnect_button, spawn_hud, update_hud_status};
-pub use version::{VersionText, update_version_text};
+pub use version::{VersionText, open_commit_link, update_version_text};
 
 use crate::flow::AppFlow;
 use bevy::prelude::*;
