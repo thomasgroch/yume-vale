@@ -1,6 +1,7 @@
 # Yume Vale authoritative game server (Bevy + Lightyear).
 # One process, 5 listeners: UDP:5000 (native), WT:5001 (WebTransport browser),
-# WS:5002 (browser fallback), HTTP:5003 (admin API — requires YUME_ADMIN_TOKEN).
+# WS:5002 (browser fallback), HTTP:5003 (admin API — requires
+# YUME_ADMIN_USER + YUME_ADMIN_PASSWORD_HASH).
 #
 # Argo CD sync wave: 2 (after postgres + TLS at wave 1)
 apiVersion: apps/v1
@@ -53,13 +54,21 @@ spec:
                 secretKeyRef:
                   name: yume-db
                   key: url
-            # Admin API token — set this secret to enable the admin panel.
-            # If unset, port 5003 is not bound and the admin API is disabled.
-            - name: YUME_ADMIN_TOKEN
+            # Admin panel login — set this secret to enable the admin API.
+            # If either var is unset, port 5003 is not bound and the admin
+            # API is disabled. Generate the hash with
+            # `cargo xtask tools hash-admin-password`.
+            - name: YUME_ADMIN_USER
               valueFrom:
                 secretKeyRef:
                   name: yume-admin
-                  key: token
+                  key: username
+                  optional: true
+            - name: YUME_ADMIN_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: yume-admin
+                  key: password_hash
                   optional: true
           volumeMounts:
             - name: tls

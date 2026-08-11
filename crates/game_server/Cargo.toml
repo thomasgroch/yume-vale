@@ -26,6 +26,9 @@ aeronet_webtransport.workspace = true
 rustls-pemfile.workspace = true
 avian3d = { workspace = true, features = ["3d", "serialize", "parry-f32"] }
 thiserror.workspace = true
+argon2 = "0.5"
+# See apps/tools/Cargo.toml for why this is explicit rather than assumed.
+rand_core = { version = "0.6", features = ["getrandom"] }
 
 [dev-dependencies]
 serde_json.workspace = true

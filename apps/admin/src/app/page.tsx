@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import TokenGate from "@/components/TokenGate";
+import LoginGate, { SESSION_KEY } from "@/components/LoginGate";
 import PlayerList from "@/components/PlayerList";
 import LiveMap from "@/components/LiveMap";
-import { AdminPlayer, AdminEvent, GameAdminWS, fetchSnapshot } from "@/lib/game-ws";
+import { AdminPlayer, AdminEvent, GameAdminWS, fetchSnapshot, logout } from "@/lib/game-ws";
 
 // ---------------------------------------------------------------------------
-// Dashboard (rendered after successful token auth)
+// Dashboard (rendered after successful login)
 // ---------------------------------------------------------------------------
 
 function Dashboard({ token }: { token: string }) {
@@ -61,6 +61,12 @@ function Dashboard({ token }: { token: string }) {
 
   const selectedPlayer = players.find((p) => p.player_id === selected) ?? null;
 
+  async function handleLogout() {
+    await logout(token);
+    sessionStorage.removeItem(SESSION_KEY);
+    window.location.reload();
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       {/* Header */}
@@ -72,6 +78,12 @@ function Dashboard({ token }: { token: string }) {
         <span style={{ fontSize: 12, color: "#888", marginLeft: "auto" }}>
           {players.length} jogador{players.length !== 1 ? "es" : ""} online · tick {tick}
         </span>
+        <button
+          onClick={handleLogout}
+          style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer" }}
+        >
+          Sair
+        </button>
       </header>
 
       {/* Body */}
@@ -120,9 +132,9 @@ function Dashboard({ token }: { token: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Page root — gate behind admin token
+// Page root — gate behind admin login
 // ---------------------------------------------------------------------------
 
 export default function AdminPage() {
-  return <TokenGate>{(token) => <Dashboard token={token} />}</TokenGate>;
+  return <LoginGate>{(token) => <Dashboard token={token} />}</LoginGate>;
 }

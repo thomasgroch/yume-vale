@@ -20,7 +20,8 @@ pub struct ServerConfig {
     /// When `None`, falls back to the `YUME_TLS_KEY` env var, then self-signed.
     pub tls_key_path: Option<String>,
     /// Port for the read-only admin HTTP/WebSocket API.
-    /// Requires `YUME_ADMIN_TOKEN` env var to be set; otherwise the port is not bound.
+    /// Requires `YUME_ADMIN_USER` and `YUME_ADMIN_PASSWORD_HASH` env vars to
+    /// be set; otherwise the port is not bound.
     pub admin_port: u16,
     /// SQLx connection string for the persistence backend
     /// (`sqlite:...` or `postgres://...`).

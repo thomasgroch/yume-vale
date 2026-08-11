@@ -16,6 +16,11 @@ struct Cli {
 enum Commands {
     /// Generate a self-signed WebTransport dev certificate (max 14-day validity).
     GenerateCert,
+    /// Hash an admin panel password for YUME_ADMIN_PASSWORD_HASH.
+    ///
+    /// Prompts for the password (hidden input, typed twice to confirm) and
+    /// prints an Argon2id PHC hash string to stdout — never the plaintext.
+    HashAdminPassword,
 }
 
 fn main() {
@@ -29,6 +34,7 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Commands::GenerateCert => generate_cert(),
+        Commands::HashAdminPassword => hash_admin_password(),
     }
 }
 
@@ -84,4 +90,32 @@ fn generate_cert() {
     tracing::info!("  key:  {}", key_pem_path.display());
     tracing::info!("  sha256 digest: {digest}");
     tracing::info!("  valid until: {}", not_after);
+}
+
+fn hash_admin_password() {
+    use argon2::Argon2;
+    use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
+
+    let password =
+        rpassword::prompt_password("Admin password: ").expect("failed to read password");
+    let confirm =
+        rpassword::prompt_password("Confirm password: ").expect("failed to read password");
+
+    if password.is_empty() {
+        eprintln!("Password must not be empty.");
+        std::process::exit(1);
+    }
+    if password != confirm {
+        eprintln!("Passwords did not match.");
+        std::process::exit(1);
+    }
+
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .expect("failed to hash password")
+        .to_string();
+
+    println!("{hash}");
+    eprintln!("\nSet this as YUME_ADMIN_PASSWORD_HASH (e.g. in the yume-admin secret).");
 }

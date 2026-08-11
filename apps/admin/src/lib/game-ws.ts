@@ -78,6 +78,32 @@ export async function fetchSnapshot(token: string): Promise<AdminPlayer[]> {
   return data.players ?? [];
 }
 
+// Exchange username+password for a session token. The password itself is
+// never stored or reused after this call — only the returned token.
+export async function login(username: string, password: string): Promise<string> {
+  const res = await fetch("/api/admin/v1/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) throw new Error("invalid credentials");
+  const data = await res.json();
+  return data.token;
+}
+
+// Revoke a session token server-side. Best-effort: the caller clears local
+// storage regardless of whether this succeeds.
+export async function logout(token: string): Promise<void> {
+  try {
+    await fetch("/api/admin/v1/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // network error on logout is fine — the session will just expire (TTL)
+  }
+}
+
 // Color palette mirrored from game_protocol PLAYER_PALETTE
 const PALETTE = [
   "#f28da6", "#f2a659", "#f2d966", "#8dd980",
