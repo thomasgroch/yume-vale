@@ -15,9 +15,46 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Detect which independent stack changed, so a push touching only
+  # apps/admin (Next.js, no shared code with the game) doesn't rebuild and
+  # redeploy the Rust server+client — that wastes ~25min AND restarts the
+  # server pod, wiping every live game connection and every admin session
+  # (sessions are in-memory) for no reason. Server+client stay coupled
+  # together (see AGENTS.md: "Rebuild server+client TOGETHER after protocol
+  # changes") — only admin is independent enough to split out.
+  # ---------------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      admin: ${{ steps.filter.outputs.admin }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'apps/server/**'
+              - 'apps/client/**'
+              - 'apps/tools/**'
+              - 'apps/xtask/**'
+              - 'assets/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'Dockerfile.server'
+              - 'Dockerfile.client'
+            admin:
+              - 'apps/admin/**'
+              - 'Dockerfile.admin'
+
+  # ---------------------------------------------------------------------------
   # Check: format, lint, unit tests + persistence contract tests (SQLite).
   # ---------------------------------------------------------------------------
   check:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       CARGO_INCREMENTAL: "0"
@@ -58,7 +95,8 @@ jobs:
   # while failing for real users.
   # ---------------------------------------------------------------------------
   wasm:
-    needs: check
+    needs: [changes, check]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: sccache
@@ -86,10 +124,15 @@ jobs:
         run: cargo build --package client --target wasm32-unknown-unknown
 
   # ---------------------------------------------------------------------------
-  # Container images (server + client)
+  # Container images — only the stack(s) that actually changed (see `changes`
+  # above). matrix.group ties each image to the filter that should gate it.
   # ---------------------------------------------------------------------------
   build:
-    needs: check
+    needs: [changes, check]
+    # matrix.* isn't available in a job-level if — the check.result gate
+    # lives here (it doesn't depend on matrix); which matrix legs actually
+    # do anything is decided per-step below via the `gate` step's output.
+    if: always() && (needs.check.result == 'success' || needs.check.result == 'skipped')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -97,22 +140,40 @@ jobs:
         include:
           - name: server
             dockerfile: Dockerfile.server
+            group: rust
           - name: client
             dockerfile: Dockerfile.client
+            group: rust
           - name: admin
             dockerfile: Dockerfile.admin
+            group: admin
     steps:
+      - name: Gate on changed stack
+        id: gate
+        run: |
+          if [ "${{ matrix.group }}" = "rust" ] && [ "${{ needs.changes.outputs.rust }}" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ matrix.group }}" = "admin" ] && [ "${{ needs.changes.outputs.admin }}" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
 
       - uses: docker/setup-buildx-action@v3
+        if: steps.gate.outputs.run == 'true'
 
       - uses: docker/login-action@v3
+        if: steps.gate.outputs.run == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/build-push-action@v6
+        if: steps.gate.outputs.run == 'true'
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -125,9 +186,15 @@ jobs:
 
   # Pin the freshly built image sha into the k8s manifests so Argo CD sees a
   # diff and rolls the pods (plain `:latest` never changes the manifests).
+  # Only pins the manifest(s) for the stack(s) actually rebuilt this run —
+  # an unchanged stack keeps its existing pin untouched.
   # [skip ci] on the commit avoids re-triggering this workflow.
   rollout:
-    needs: build
+    needs: [changes, build]
+    if: |
+      always() &&
+      needs.build.result != 'failure' &&
+      (needs.changes.outputs.rust == 'true' || needs.changes.outputs.admin == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -135,9 +202,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Pin image sha in manifests
         run: |
-          sed -i -E "s|(yume-vale-server:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/10-server.yaml
-          sed -i -E "s|(yume-vale-client:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/20-client.yaml
-          sed -i -E "s|(yume-vale-admin:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|"  deploy/50-admin.yaml
+          if [ "${{ needs.changes.outputs.rust }}" = "true" ]; then
+            sed -i -E "s|(yume-vale-server:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/10-server.yaml
+            sed -i -E "s|(yume-vale-client:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/20-client.yaml
+          fi
+          if [ "${{ needs.changes.outputs.admin }}" = "true" ]; then
+            sed -i -E "s|(yume-vale-admin:)[a-zA-Z0-9._-]+|\1sha-${{ github.sha }}|" deploy/50-admin.yaml
+          fi
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
