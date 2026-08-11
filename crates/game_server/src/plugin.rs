@@ -16,17 +16,22 @@ use crate::systems::tls::{TlsConfig, load_tls_identity_system};
 use crate::systems::*;
 use resources::systems::{spawn_resource_nodes, tick_resource_respawn};
 
-#[derive(Default)]
-pub struct ServerPlugin {
-    pub config: ServerConfig,
-}
+/// All server-side game logic: physics, protocol/gameplay plugins, world
+/// setup, and every `FixedUpdate` system that drives players/creatures/
+/// resources. Deliberately excludes anything that touches the network or
+/// filesystem (real socket binds, TLS, the admin HTTP API, persistence DB
+/// connections) — those stay in [`ServerPlugin`], production-only.
+///
+/// This is the single source of truth for gameplay system registration,
+/// shared by [`ServerPlugin`] (production) and `build_test_app()` (tests).
+/// Previously these were two hand-maintained, independently-drifting lists;
+/// three separate systems ended up registered in only one of them, so a
+/// server-authoritative bug (frozen player movement) was invisible to tests.
+/// Add new gameplay systems here, not to either caller individually.
+pub struct GameLogicPlugin;
 
-impl Plugin for ServerPlugin {
+impl Plugin for GameLogicPlugin {
     fn build(&self, app: &mut App) {
-        let tick_duration = Duration::from_secs_f64(1.0 / self.config.tick_rate as f64);
-
-        app.add_plugins(lightyear::prelude::server::ServerPlugins { tick_duration });
-
         app.add_plugins(
             PhysicsPlugins::default()
                 .build()
@@ -45,14 +50,83 @@ impl Plugin for ServerPlugin {
             CreaturePlugin,
             SocialPlugin,
             ServerHousingPlugin,
-            AdminApiPlugin {
-                port: self.config.admin_port,
-            },
         ));
 
-        app.insert_resource(ServerConfigResource(self.config.clone()));
         app.init_resource::<NextPlayerColor>();
         app.init_resource::<PersistenceCoordinator>();
+        app.init_resource::<InterestSettings>();
+        app.init_resource::<VisibilityCache>();
+
+        // Load world config from embedded RON. Tests override this resource
+        // afterwards with a smaller fixture — safe because it's only read at
+        // schedule-run time (PostStartup), not at plugin-build time.
+        let world_config_ron = include_str!("../../../assets/world.ron");
+        match game_core::world_config::WorldConfig::from_str(world_config_ron) {
+            Ok(wc) => {
+                app.insert_resource(WorldConfigResource(wc));
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse world.ron: {e}");
+            }
+        }
+
+        app.add_observer(handle_new_client_link);
+        app.add_observer(auth::on_client_connected);
+        app.add_observer(attach_housing_player);
+
+        app.add_systems(FixedUpdate, update_spatial_visibility);
+        app.add_systems(
+            FixedUpdate,
+            (
+                auth::handle_identity_hello,
+                apply_client_input,
+                stop_stale_player_input,
+                handle_action_intent,
+                initialize_player_components,
+                tick_player_cooldowns,
+                tick_resource_respawn,
+                process_pending_transactions,
+            )
+                .in_set(ServerSystems),
+        );
+        app.configure_sets(FixedUpdate, player::PlayerMovementSet.after(ServerSystems));
+        app.add_systems(
+            FixedUpdate,
+            (
+                creatures::sync_creature_position,
+                sync_physics_position_to_player_position,
+            )
+                .after(PhysicsSystems::Writeback),
+        );
+
+        app.add_systems(
+            PostStartup,
+            (
+                setup_world,
+                |commands: Commands, config: Res<WorldConfigResource>| {
+                    spawn_resource_nodes(commands, &config.0);
+                },
+            ),
+        );
+    }
+}
+
+#[derive(Default)]
+pub struct ServerPlugin {
+    pub config: ServerConfig,
+}
+
+impl Plugin for ServerPlugin {
+    fn build(&self, app: &mut App) {
+        let tick_duration = Duration::from_secs_f64(1.0 / self.config.tick_rate as f64);
+
+        app.add_plugins(lightyear::prelude::server::ServerPlugins { tick_duration });
+        app.add_plugins(GameLogicPlugin);
+        app.add_plugins(AdminApiPlugin {
+            port: self.config.admin_port,
+        });
+
+        app.insert_resource(ServerConfigResource(self.config.clone()));
 
         // Wire persistence from config/env var.
         // The config field takes precedence; if unset, falls back to
@@ -103,70 +177,7 @@ impl Plugin for ServerPlugin {
         }
         load_tls_identity_system(app.world_mut());
 
-        // Load world config from embedded RON
-        let world_config_ron = include_str!("../../../assets/world.ron");
-        match game_core::world_config::WorldConfig::from_str(world_config_ron) {
-            Ok(wc) => {
-                app.insert_resource(WorldConfigResource(wc));
-            }
-            Err(e) => {
-                tracing::error!("Failed to parse world.ron: {e}");
-            }
-        }
-
-        // Spatial interest management at 5 Hz
-        app.init_resource::<InterestSettings>();
-        app.init_resource::<VisibilityCache>();
-        app.add_systems(FixedUpdate, update_spatial_visibility);
-
-        app.add_observer(handle_new_client_link);
-        app.add_observer(auth::on_client_connected);
-        app.add_observer(attach_housing_player);
-        app.add_systems(
-            FixedUpdate,
-            (
-                auth::handle_identity_hello,
-                apply_client_input,
-                stop_stale_player_input,
-            )
-                .in_set(ServerSystems),
-        );
-
-        app.configure_sets(FixedUpdate, player::PlayerMovementSet.after(ServerSystems));
-
-        app.add_systems(
-            FixedUpdate,
-            (
-                creatures::sync_creature_position,
-                sync_physics_position_to_player_position,
-            )
-                .after(PhysicsSystems::Writeback),
-        );
-
-        // Resource node collection, cooldown, persistence commit, and player component initialization
-        app.add_systems(
-            FixedUpdate,
-            (
-                handle_action_intent,
-                initialize_player_components,
-                tick_player_cooldowns,
-                tick_resource_respawn,
-                process_pending_transactions,
-            )
-                .in_set(ServerSystems),
-        );
-
-        // Spawn resource nodes after world is set up
-        app.add_systems(
-            PostStartup,
-            (
-                setup_server,
-                setup_world,
-                |commands: Commands, config: Res<WorldConfigResource>| {
-                    spawn_resource_nodes(commands, &config.0);
-                },
-            ),
-        );
+        app.add_systems(PostStartup, setup_server);
     }
 }
 
