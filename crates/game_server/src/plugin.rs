@@ -136,7 +136,11 @@ impl Plugin for ServerPlugin {
 
         app.add_systems(
             FixedUpdate,
-            (creatures::sync_creature_position,).after(PhysicsSystems::Writeback),
+            (
+                creatures::sync_creature_position,
+                sync_physics_position_to_player_position,
+            )
+                .after(PhysicsSystems::Writeback),
         );
 
         // Resource node collection, cooldown, persistence commit, and player component initialization

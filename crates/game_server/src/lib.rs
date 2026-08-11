@@ -32,7 +32,17 @@ pub fn build_test_app() -> bevy::prelude::App {
     app.add_plugins(MinimalPlugins);
     app.add_plugins(bevy::state::app::StatesPlugin);
     // Avian physics — required by PlayerPlugin (physics feature) for SpatialQuery.
-    app.add_plugins(avian3d::PhysicsPlugins::default());
+    // Mirrors production's plugin config exactly (see ServerPlugin::build): with
+    // PhysicsTransformPlugin left enabled here but disabled in production, a
+    // system reading `Transform` for player position would pass in tests while
+    // doing nothing in production, since avian never syncs Position → Transform
+    // there.
+    app.add_plugins(
+        avian3d::PhysicsPlugins::default()
+            .build()
+            .disable::<avian3d::prelude::PhysicsTransformPlugin>()
+            .disable::<avian3d::prelude::PhysicsInterpolationPlugin>(),
+    );
     // Mirror production plugin order (ServerPlugins first): ProtocolPlugin's
     // replicate() calls need resources from lightyear's replicon backend.
     app.add_plugins(lightyear::prelude::server::ServerPlugins {

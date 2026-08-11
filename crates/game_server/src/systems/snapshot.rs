@@ -1,12 +1,19 @@
+use avian3d::prelude::Position;
 use bevy::prelude::*;
 use game_protocol::PlayerPosition;
 
-/// Copies `Transform.translation` → `PlayerPosition` for all player entities.
-/// Must run AFTER `integrate_velocity` so that the replicated position reflects
-/// the latest server-authoritative movement.
-pub fn sync_transform_to_position(mut query: Query<(&Transform, &mut PlayerPosition)>) {
-    for (transform, mut pos) in query.iter_mut() {
-        pos.0 = transform.translation;
+/// Copies avian3d's `Position` → `PlayerPosition` for all player entities.
+///
+/// The server disables avian's `PhysicsTransformPlugin` (replication runs off
+/// avian's own `Position`/`Rotation`, not `Transform`), so `Transform` is
+/// never updated by physics in production — this must read `Position`
+/// directly. Must run after the physics step so the replicated position
+/// reflects the latest server-authoritative movement.
+pub fn sync_physics_position_to_player_position(
+    mut query: Query<(&Position, &mut PlayerPosition)>,
+) {
+    for (position, mut pos) in query.iter_mut() {
+        pos.0 = position.0;
     }
 }
 
@@ -18,7 +25,7 @@ mod tests {
     use player::spawn_player;
 
     #[test]
-    fn sync_transform_to_position_copies_translation() {
+    fn sync_physics_position_to_player_position_copies_avian_position() {
         let mut app = build_test_app();
         let entity = spawn_player(
             &mut app.world_mut().commands(),
@@ -30,10 +37,10 @@ mod tests {
 
         app.world_mut()
             .entity_mut(entity)
-            .insert(Transform::from_translation(Vec3::new(15.0, 0.0, 25.0)));
+            .insert(Position(Vec3::new(15.0, 0.0, 25.0)));
         app.world_mut().flush();
 
-        app.add_systems(FixedUpdate, sync_transform_to_position);
+        app.add_systems(FixedUpdate, sync_physics_position_to_player_position);
         app.world_mut().run_schedule(FixedUpdate);
 
         let pos = app.world().get::<PlayerPosition>(entity).unwrap();
