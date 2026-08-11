@@ -99,36 +99,6 @@ type UnvisualizedPlayers<'w, 's> = Query<
     ),
 >;
 
-#[allow(clippy::type_complexity)]
-pub fn diag_player_components(
-    time: Res<Time>,
-    mut timer: Local<Option<Timer>>,
-    players: Query<
-        (
-            Entity,
-            Has<PlayerColor>,
-            Has<PlayerPosition>,
-            Has<Interpolated>,
-            Has<Predicted>,
-            Has<FoxAnimation>,
-        ),
-        With<Player>,
-    >,
-) {
-    let timer = timer.get_or_insert_with(|| Timer::from_seconds(1.0, TimerMode::Repeating));
-    timer.tick(time.delta());
-    if !timer.just_finished() {
-        return;
-    }
-    let count = players.iter().count();
-    info!("DIAG player entity count: {count}");
-    for (e, color, pos, interp, pred, fox_anim) in players.iter() {
-        info!(
-            "DIAG player {e:?}: color={color} pos={pos} interpolated={interp} predicted={pred} fox_anim={fox_anim}"
-        );
-    }
-}
-
 /// Attaches the fox scene to any player entity that arrives via Lightyear
 /// replication — marked `Interpolated` for remote players, or `Predicted`
 /// for the local player's own entity (the server sends exactly one of the

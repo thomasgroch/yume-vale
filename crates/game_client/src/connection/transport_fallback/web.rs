@@ -8,7 +8,7 @@ use bevy::prelude::*;
 
 use lightyear::prelude::client::{WebSocketClientIo, WebSocketScheme, WebTransportClientIo};
 use lightyear::prelude::{
-    Client, Connect, Connected, Link, LocalAddr, PeerAddr, ReplicationReceiver,
+    Client, Connect, Connected, Link, LocalAddr, PeerAddr, PredictionManager, ReplicationReceiver,
 };
 
 use super::super::{client_id, transport};
@@ -99,6 +99,7 @@ fn spawn_ws_client(
                 Link::new(None),
                 client,
                 ReplicationReceiver,
+                PredictionManager::default(),
                 WebSocketClientIo::from_url(aeronet_websocket::client::ClientConfig, wss_url),
             ))
             .id();
@@ -121,6 +122,7 @@ fn spawn_ws_client(
             Link::new(None),
             client,
             ReplicationReceiver,
+            PredictionManager::default(),
             WebSocketClientIo::from_addr(
                 aeronet_websocket::client::ClientConfig,
                 WebSocketScheme::Plain,

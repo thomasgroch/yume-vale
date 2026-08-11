@@ -82,6 +82,7 @@ pub(crate) fn start_connection(
                 client,
                 UdpIo::default(),
                 ReplicationReceiver,
+                PredictionManager::default(),
             ))
             .id()
     };
@@ -107,6 +108,7 @@ pub(crate) fn start_connection(
                     Link::new(None),
                     client,
                     ReplicationReceiver,
+                    PredictionManager::default(),
                     WebSocketClientIo::from_url(aeronet_websocket::client::ClientConfig, url),
                 ))
                 .id()
@@ -126,6 +128,7 @@ pub(crate) fn start_connection(
                         Link::new(None),
                         client,
                         ReplicationReceiver,
+                        PredictionManager::default(),
                         WebSocketClientIo::from_url(
                             aeronet_websocket::client::ClientConfig,
                             wss_url,
@@ -148,6 +151,7 @@ pub(crate) fn start_connection(
                         Link::new(None),
                         client,
                         ReplicationReceiver,
+                        PredictionManager::default(),
                         WebSocketClientIo::from_addr(
                             aeronet_websocket::client::ClientConfig,
                             WebSocketScheme::Plain,
@@ -188,6 +192,7 @@ pub(crate) fn start_connection(
                     Link::new(None),
                     client,
                     ReplicationReceiver,
+                    PredictionManager::default(),
                     WebTransportClientIo {
                         certificate_digest: digest,
                     },
