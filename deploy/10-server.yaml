@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
         - name: server
-          image: ghcr.io/thomasgroch/yume-vale-server:sha-d5e2385e4ee55fcc9c3e271795302b1d1903634e
+          image: ghcr.io/thomasgroch/yume-vale-server:sha-443de4011ffb90024dc8d2c75b88f92158aa4af3
           imagePullPolicy: Always
           ports:
             - name: netcode-udp
