@@ -5,8 +5,7 @@ use game_core::constants::{RUN_SPEED, WALK_SPEED};
 use game_core::decorations::{DecorationKind, decoration_layout};
 use game_core::math::Direction;
 use game_core::player_state::PlayerInput;
-use game_protocol::{MovementInput, ReplicatedPlayerInput};
-use lightyear::prelude::input::native::ActionState;
+use game_protocol::ReplicatedPlayerInput;
 
 use crate::PlayerMovement;
 
@@ -50,12 +49,6 @@ impl Default for PlayerPhysicsBundle {
     }
 }
 
-pub fn decode_movement(input: MovementInput) -> Direction {
-    let x = input.move_x as f32 / 127.0;
-    let z = input.move_z as f32 / 127.0;
-    Direction::from_xz(x, z).unwrap_or(Direction::zero())
-}
-
 pub fn horizontal_velocity(
     current: Vec3,
     direction: Direction,
@@ -79,26 +72,24 @@ type MovingPlayers<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static ActionState<MovementInput>,
+        &'static PlayerMovement,
         &'static Position,
         &'static mut LinearVelocity,
-        &'static mut PlayerMovement,
-        &'static mut ReplicatedPlayerInput,
         &'static mut JumpLatch,
     ),
     With<RigidBody>,
 >;
 
+/// Applies the already-decoded `PlayerMovement` (populated from the client's
+/// `ClientInput` message by `apply_client_input`, which runs earlier in
+/// `ServerSystems`) to the player's physics velocity.
 pub fn apply_predicted_movement(
     time: Res<Time>,
     spatial_query: SpatialQuery,
     mut players: MovingPlayers,
 ) {
     let dt = time.delta_secs();
-    for (entity, input, position, mut velocity, mut movement, mut replicated, mut latch) in
-        &mut players
-    {
-        let direction = decode_movement(input.0);
+    for (entity, movement, position, mut velocity, mut latch) in &mut players {
         let ray_origin = position.0 - Vec3::Y * (PLAYER_HALF_HEIGHT - 0.02);
         let grounded = spatial_query
             .cast_ray(
@@ -109,22 +100,19 @@ pub fn apply_predicted_movement(
                 &SpatialQueryFilter::from_excluded_entities([entity]),
             )
             .is_some();
-        let horizontal = horizontal_velocity(velocity.0, direction, input.run, grounded, dt);
+        let horizontal = horizontal_velocity(
+            velocity.0,
+            movement.direction,
+            movement.running,
+            grounded,
+            dt,
+        );
         velocity.x = horizontal.x;
         velocity.z = horizontal.z;
-        if input.jump && !latch.0 && grounded {
+        if movement.jump && !latch.0 && grounded {
             velocity.y = (2.0 * GRAVITY * JUMP_HEIGHT).sqrt();
         }
-        latch.0 = input.jump;
-        movement.direction = direction;
-        movement.running = input.run;
-        movement.jump = input.jump;
-        replicated.0 = PlayerInput {
-            movement: direction,
-            run: input.run,
-            interact: None,
-            action: None,
-        };
+        latch.0 = movement.jump;
     }
 }
 
@@ -175,17 +163,6 @@ pub fn spawn_static_world_colliders(commands: &mut Commands) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn movement_input_decodes_and_normalizes() {
-        let direction = decode_movement(MovementInput {
-            move_x: 127,
-            move_z: 127,
-            ..default()
-        });
-        assert!((direction.0.length() - 1.0).abs() < 1e-5);
-        assert!(direction.0.x > 0.0 && direction.0.z > 0.0);
-    }
 
     #[test]
     fn grounded_acceleration_reaches_walk_target() {
