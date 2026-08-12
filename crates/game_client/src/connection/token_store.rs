@@ -5,7 +5,9 @@
 //! server can restore the same stable `PlayerId`.
 //!
 //! Storage backends:
-//! - **Browser**: `window.localStorage` under key `yume_identity_token`
+//! - **Browser**: `window.sessionStorage` under key `yume_identity_token`
+//!   (per-tab, not shared with other tabs — two tabs open to the same game
+//!   must get two distinct identities/characters, not fight over one)
 //! - **Native**: `~/.config/yume-vale/identity.json` (atomic write)
 //! - **Override**: `YUME_IDENTITY_TOKEN` env var (native only, test override)
 
@@ -96,12 +98,12 @@ fn save_native_token(token: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Wasm (localStorage) storage
+// Wasm (sessionStorage) storage
 // ---------------------------------------------------------------------------
 
 #[cfg(target_arch = "wasm32")]
 fn storage() -> Option<web_sys::Storage> {
-    web_sys::window()?.local_storage().ok()?
+    web_sys::window()?.session_storage().ok()?
 }
 
 #[cfg(target_arch = "wasm32")]

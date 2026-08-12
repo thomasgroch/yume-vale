@@ -28,6 +28,10 @@ pub fn build_test_app() -> bevy::prelude::App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(bevy::state::app::StatesPlugin);
+    // GameLogicPlugin disables avian's PhysicsTransformPlugin (see
+    // plugin.rs), so nothing else provides Transform propagation — needed by
+    // any test that runs the full schedule via `app.update()`.
+    app.add_plugins(bevy::transform::TransformPlugin);
     // Mirror production plugin order (ServerPlugins first): ProtocolPlugin's
     // replicate() calls need resources from lightyear's replicon backend.
     app.add_plugins(lightyear::prelude::server::ServerPlugins {

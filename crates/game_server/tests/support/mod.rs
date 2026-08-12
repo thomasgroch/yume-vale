@@ -18,19 +18,14 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use core::time::Duration;
 use game_protocol::{IdentityHello, PROTOCOL_ID, PlayerColor, PlayerPosition, ProtocolPlugin};
-use game_server::systems::auth;
+use game_server::plugin::GameLogicPlugin;
 use game_server::systems::setup::WorldConfigResource;
-use game_server::systems::{
-    NextPlayerColor, ServerSystems, apply_client_input, handle_new_client_link,
-};
 use lightyear::connection::client::Connect;
 use lightyear::crossbeam::CrossbeamIo;
 use lightyear::prelude::client::{ClientPlugins, RawClient};
 use lightyear::prelude::server::{LinkOf, RawServer, ServerPlugins, Started};
 use lightyear::prelude::*;
 use player::{Player, PlayerPlugin};
-use resources::systems::{spawn_resource_nodes, tick_resource_respawn};
-use social::SocialPlugin;
 use std::net::{Ipv4Addr, SocketAddr};
 
 /// Tick duration used by all test apps (≈60 Hz).
@@ -39,42 +34,28 @@ pub const TICK: Duration = Duration::from_millis(16);
 /// Maximum frames to poll inside [`wait_until`] before giving up.
 pub const MAX_FRAMES: usize = 400;
 
-/// Build a server `App` with protocol, player, auth, and core server systems.
+/// Build a server `App` running the real [`GameLogicPlugin`] — the same
+/// gameplay systems production runs (see plugin.rs) — so these integration
+/// tests exercise exactly what production does, instead of a third
+/// hand-maintained system list that could drift from it.
 pub fn server_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(StatesPlugin);
-    app.add_plugins(avian3d::PhysicsPlugins::default());
+    // Mirrors apps/server/src/main.rs: GameLogicPlugin disables avian's
+    // PhysicsTransformPlugin (see plugin.rs), so nothing else provides
+    // Transform propagation — without this, PostUpdate's transform systems
+    // panic on a missing resource the moment `app.update()` runs.
+    app.add_plugins(bevy::transform::TransformPlugin);
     app.add_plugins(ServerPlugins {
         tick_duration: TICK,
     });
-    app.add_plugins((ProtocolPlugin, PlayerPlugin, SocialPlugin));
-    app.init_resource::<NextPlayerColor>();
-    app.init_resource::<game_server::systems::persistence::PersistenceCoordinator>();
-    // World config resource
+    app.add_plugins(GameLogicPlugin);
+    // Override the embedded world config with an empty one — these tests
+    // don't exercise creatures/resource nodes and shouldn't pay for them.
     app.insert_resource(WorldConfigResource(
         game_core::world_config::WorldConfig::default(),
     ));
-    app.add_observer(handle_new_client_link);
-    app.add_observer(auth::on_client_connected);
-    app.add_systems(
-        FixedUpdate,
-        (
-            auth::handle_identity_hello,
-            apply_client_input,
-            game_server::systems::handle_action_intent,
-            game_server::systems::initialize_player_components,
-            game_server::systems::tick_player_cooldowns,
-            tick_resource_respawn,
-        )
-            .in_set(ServerSystems),
-    );
-    app.add_systems(
-        PostStartup,
-        |commands: Commands, config: Res<WorldConfigResource>| {
-            spawn_resource_nodes(commands, &config.0);
-        },
-    );
     app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(TICK));
     app.finish();
     app
@@ -167,6 +148,15 @@ pub fn send_identity_hello(server: &mut App, client: &mut App, token: &str) {
 /// Number of `Player` entities on the server.
 pub fn server_player_count(s: &mut App) -> usize {
     s.world_mut().query::<&Player>().iter(s.world()).count()
+}
+
+/// Number of authenticated client connection entities (i.e. distinct
+/// `ClientPlayer` links) on the server.
+pub fn server_client_connection_count(s: &mut App) -> usize {
+    s.world_mut()
+        .query::<&game_server::systems::ClientPlayer>()
+        .iter(s.world())
+        .count()
 }
 
 /// Whether the client world has at least one entity with `Player`,

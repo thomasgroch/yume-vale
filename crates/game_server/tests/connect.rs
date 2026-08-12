@@ -106,6 +106,41 @@ fn reconnect_same_id_leaves_single_player() {
 }
 
 #[test]
+fn second_client_reusing_same_token_evicts_first_not_shares_it() {
+    // Regression test: two browser tabs sharing localStorage used to send
+    // the same identity token, and the server would hand the SAME PlayerId
+    // to both live connections — both clients then controlled one fox.
+    // The first client's connection must be disconnected (not left
+    // controlling the entity alongside the second), and exactly one player
+    // must remain.
+    let mut server = server_app();
+    let mut client1 = client_app();
+    let mut client2 = client_app();
+
+    connect_client(&mut server, &mut client1, 20005);
+    send_identity_hello(&mut server, &mut client1, "shared-token");
+    let ok = wait_until(&mut server, &mut client1, |s, _c| {
+        server_player_count(s) == 1
+    });
+    assert!(ok, "first client should authenticate");
+    assert_eq!(server_client_connection_count(&mut server), 1);
+
+    // Second client connects and authenticates with the SAME token while
+    // the first client's connection is still alive (never despawned).
+    connect_client(&mut server, &mut client2, 20006);
+    send_identity_hello(&mut server, &mut client2, "shared-token");
+
+    let ok = wait_until(&mut server, &mut client2, |s, _c| {
+        server_player_count(s) == 1 && server_client_connection_count(s) == 1
+    });
+    assert!(
+        ok,
+        "server should end up with exactly one player and one live connection, \
+         not two connections sharing the same character"
+    );
+}
+
+#[test]
 fn duplicate_identity_hello_produces_one_player() {
     let mut server = server_app();
     let mut client = client_app();
