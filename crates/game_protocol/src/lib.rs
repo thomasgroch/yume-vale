@@ -6,6 +6,16 @@ pub mod protocol;
 pub const PROTOCOL_ID: u64 = 0x59c3_7a73;
 pub const PRIVATE_KEY: [u8; 32] = *b"yume-vale-dev-key-00000000000000";
 
+/// Seconds of silence before netcode considers a connection dead.
+///
+/// The client bakes this into the connect token it builds (`Authentication::
+/// Manual`), and that token-embedded value is what actually governs —
+/// the server's own `NetcodeConfig.client_timeout_secs` is currently unused
+/// by this connect-token-based auth flow. Both sides still set it from this
+/// one constant so a future change to the auth model (e.g. server-issued
+/// tokens) can't silently end up with the client and server disagreeing.
+pub const CLIENT_TIMEOUT_SECS: i32 = 10;
+
 pub use channels::*;
 pub use components::*;
 pub use messages::*;

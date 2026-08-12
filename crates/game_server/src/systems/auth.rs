@@ -12,12 +12,12 @@
 //! 5. Stale session for the same PlayerId is replaced (disconnected before spawn).
 
 use bevy::prelude::*;
-use game_core::constants::{GROUND_Y, MAX_PLAYERS};
+use game_core::constants::GROUND_Y;
 use game_core::id::PlayerId;
 use game_protocol::channels::ReliableChannel;
 use game_protocol::{
-    ConnectionRejected, IdentityHello, MovementInput, PROTOCOL_ID, PlayerColor, RejectionKind,
-    Welcome,
+    ConnectionRejected, IdentityHello, MovementInput, PROTOCOL_ID, PlayerColor, PlayerPosition,
+    RejectionKind, Welcome,
 };
 use lightyear::connection::client_of::ClientOf;
 use lightyear::connection::network_target::NetworkTarget;
@@ -74,25 +74,25 @@ fn generate_token() -> String {
 /// Handles a newly connected client: adds replication sender and marks it as
 /// a pending session. **Does not spawn a player** — that happens only after
 /// authentication via `IdentityHello`.
+///
+/// Capacity is intentionally *not* checked here. It used to be, but that
+/// path silently dropped the connection with no rejection message —
+/// `PendingSession` was never inserted, so `handle_identity_hello` (which
+/// only processes pending sessions) never saw the client either, leaving it
+/// netcode-connected but permanently unauthenticated until its own
+/// connection timeout. `resolve_identity` (called from
+/// `handle_identity_hello`) already performs the same `MAX_PLAYERS` check
+/// and, unlike this one did, actually sends `RejectionKind::ServerFull` to
+/// the client. Let it be the single source of truth for capacity rejection.
 pub fn on_client_connected(
     trigger: On<Add, Connected>,
     mut commands: Commands,
     client_query: Query<&RemoteId, With<ClientOf>>,
-    pending_query: Query<&PendingSession>,
-    player_query: Query<&ClientPlayer>,
 ) {
     let client_entity = trigger.entity;
     let Ok(remote_id) = client_query.get(client_entity) else {
         return;
     };
-
-    let total_sessions = pending_query.iter().count() + player_query.iter().count();
-    if total_sessions >= MAX_PLAYERS {
-        warn!(
-            "server full ({total_sessions} sessions, max {MAX_PLAYERS}), rejecting new connection"
-        );
-        return;
-    }
 
     let client_id = match remote_id.0 {
         PeerId::Netcode(id) => id,
@@ -127,7 +127,7 @@ pub fn handle_identity_hello(
     mut next_color: ResMut<NextPlayerColor>,
     mut roster: Option<ResMut<ConnectedRoster>>,
     mut player_client_map: Option<ResMut<PlayerClientMap>>,
-    existing_players: Query<(Entity, &player::Player)>,
+    existing_players: Query<(Entity, &player::Player, Option<&PlayerPosition>)>,
     pending_counter: Query<&PendingSession>,
 ) {
     let total_pending = pending_counter.iter().count();
@@ -164,11 +164,18 @@ pub fn handle_identity_hello(
                 .and_then(|h| h.load_inventory(player_id.get() as i64).ok())
                 .unwrap_or_default();
 
-            // Stale session replacement: if the same PlayerId already has
-            // a player entity, despawn it before spawning the new one.
-            for (existing_entity, p) in existing_players.iter() {
+            // Stale session replacement: if the same PlayerId already has a
+            // player entity (e.g. a brief network drop and reconnect),
+            // despawn it before spawning the new one — but keep its last
+            // position so reconnecting doesn't teleport the player back to
+            // the map origin.
+            let mut respawn_position = Vec3::new(0.0, GROUND_Y, 0.0);
+            for (existing_entity, p, position) in existing_players.iter() {
                 if p.id == player_id {
                     info!("Despawning stale player {player_id} for reconnecting identity");
+                    if let Some(position) = position {
+                        respawn_position = position.0;
+                    }
                     commands.entity(existing_entity).try_despawn();
                 }
             }
@@ -192,7 +199,7 @@ pub fn handle_identity_hello(
                 &mut commands,
                 player_id,
                 player_name.clone(),
-                Vec3::new(0.0, GROUND_Y, 0.0),
+                respawn_position,
             );
 
             // ── Apply loaded state to player entity ────────────────────────
@@ -247,6 +254,16 @@ pub fn handle_identity_hello(
             commands
                 .entity(player_entity)
                 .insert(PlayerPhysicsBundle::default());
+
+            // Avian's own Position drives physics (see plugin.rs:
+            // PhysicsTransformPlugin is disabled, so nothing syncs it from
+            // Transform) and is what sync_physics_position_to_player_position
+            // reads every tick — without this, the preserved
+            // respawn_position above would be overwritten back to the
+            // physics default (the origin) on the very next tick.
+            commands
+                .entity(player_entity)
+                .insert(avian3d::prelude::Position(respawn_position));
 
             commands
                 .entity(player_entity)
@@ -410,6 +427,7 @@ mod tests {
     use super::*;
     use crate::build_test_app;
     use crate::systems::connection::handle_new_client_link;
+    use game_core::constants::MAX_PLAYERS;
     use lightyear::connection::client_of::ClientOf;
 
     // ------------------------------------------------------------------
@@ -581,15 +599,19 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // RED→GREEN: capacity enforcement (MAX_PLAYERS = 16)
+    // Capacity enforcement lives solely in resolve_identity (see
+    // resolve_identity_rejects_when_server_full above) — on_client_connected
+    // used to duplicate the MAX_PLAYERS check, but silently: it skipped
+    // inserting PendingSession with no rejection message, leaving the
+    // client netcode-connected but stuck forever. This test guards against
+    // reintroducing that gate here.
     // ------------------------------------------------------------------
 
     #[test]
-    fn rejects_connection_when_server_full() {
+    fn connected_always_gets_pending_session_regardless_of_capacity() {
         let mut app = build_test_app();
         app.add_observer(on_client_connected);
 
-        // Fill the server with 16 authenticated clients
         for i in 0..MAX_PLAYERS {
             let dummy_player = app.world_mut().spawn_empty().id();
             app.world_mut().spawn(ClientPlayer {
@@ -598,104 +620,16 @@ mod tests {
             });
         }
 
-        // 17th client attempts to connect
-        let rejected = app
+        let client = app
             .world_mut()
             .spawn((Connected, RemoteId(PeerId::Netcode(999)), ClientOf))
             .id();
         app.world_mut().run_schedule(FixedUpdate);
 
         assert!(
-            app.world_mut().get::<PendingSession>(rejected).is_none(),
-            "17th client must NOT receive PendingSession when server is full"
-        );
-    }
-
-    #[test]
-    fn slot_available_after_disconnect() {
-        let mut app = build_test_app();
-        app.add_observer(on_client_connected);
-
-        // Fill the server with 16 authenticated clients
-        let mut client_entities = Vec::new();
-        for i in 0..MAX_PLAYERS {
-            let dummy_player = app.world_mut().spawn_empty().id();
-            let client = app
-                .world_mut()
-                .spawn(ClientPlayer {
-                    player_entity: dummy_player,
-                    player_id: PlayerId::new(i as u64 + 1),
-                })
-                .id();
-            client_entities.push(client);
-        }
-
-        // Confirm 17th is rejected
-        let rejected = app
-            .world_mut()
-            .spawn((Connected, RemoteId(PeerId::Netcode(101)), ClientOf))
-            .id();
-        app.world_mut().run_schedule(FixedUpdate);
-        assert!(
-            app.world_mut().get::<PendingSession>(rejected).is_none(),
-            "17th client must be rejected when full"
-        );
-
-        // Despawn one authenticated client (simulates disconnect)
-        app.world_mut().despawn(client_entities[0]);
-
-        // Now a new client should be able to connect
-        let replacement = app
-            .world_mut()
-            .spawn((Connected, RemoteId(PeerId::Netcode(102)), ClientOf))
-            .id();
-        app.world_mut().run_schedule(FixedUpdate);
-        assert!(
-            app.world_mut().get::<PendingSession>(replacement).is_some(),
-            "After disconnect, a slot must become available for a new client"
-        );
-    }
-
-    #[test]
-    fn pending_disconnect_releases_slot() {
-        let mut app = build_test_app();
-        app.add_observer(on_client_connected);
-
-        // Add 15 authenticated clients (one slot taken by a pending session)
-        for i in 0..15 {
-            let dummy_player = app.world_mut().spawn_empty().id();
-            app.world_mut().spawn(ClientPlayer {
-                player_entity: dummy_player,
-                player_id: PlayerId::new(i as u64 + 1),
-            });
-        }
-
-        // Add a pending session (simulates a hung/connecting client)
-        let pending_client = app.world_mut().spawn(PendingSession).id();
-
-        // A new connection should be rejected (15 + 1 = 16 = full)
-        let rejected = app
-            .world_mut()
-            .spawn((Connected, RemoteId(PeerId::Netcode(201)), ClientOf))
-            .id();
-        app.world_mut().run_schedule(FixedUpdate);
-        assert!(
-            app.world_mut().get::<PendingSession>(rejected).is_none(),
-            "New client must be rejected when 15 auth + 1 pending = full"
-        );
-
-        // Despawn the pending session (simulates pending disconnect/cleanup)
-        app.world_mut().despawn(pending_client);
-
-        // Now a new client should be accepted
-        let replacement = app
-            .world_mut()
-            .spawn((Connected, RemoteId(PeerId::Netcode(202)), ClientOf))
-            .id();
-        app.world_mut().run_schedule(FixedUpdate);
-        assert!(
-            app.world_mut().get::<PendingSession>(replacement).is_some(),
-            "After pending disconnect, a slot must become available"
+            app.world_mut().get::<PendingSession>(client).is_some(),
+            "PendingSession must be inserted even when at MAX_PLAYERS — \
+             resolve_identity is responsible for rejecting, with a message"
         );
     }
 }

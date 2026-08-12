@@ -3,9 +3,10 @@
 mod support;
 use support::*;
 
+use avian3d::prelude::Position as PhysicsPosition;
 use bevy::prelude::*;
 use game_protocol::channels::ReliableChannel;
-use game_protocol::{IdentityHello, PROTOCOL_ID};
+use game_protocol::{IdentityHello, PROTOCOL_ID, PlayerPosition};
 use game_server::systems::NextPlayerColor;
 use lightyear::connection::client::Connect;
 use lightyear::crossbeam::CrossbeamIo;
@@ -102,6 +103,97 @@ fn reconnect_same_id_leaves_single_player() {
     assert!(
         ok,
         "reconnect should produce exactly 1 player (stale despawned)"
+    );
+}
+
+#[test]
+fn reconnect_preserves_last_position_instead_of_respawning_at_origin() {
+    // Regression test: every reconnect (a brief network drop, a backgrounded
+    // tab, anything that costs the netcode connection) used to respawn the
+    // player at the map origin, discarding wherever they actually were.
+    let mut server = server_app();
+    let mut client = client_app();
+    connect_client(&mut server, &mut client, 20007);
+
+    send_identity_hello(&mut server, &mut client, "test-position-token");
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
+        server_player_count(s) == 1
+    });
+    assert!(ok, "first connection established");
+
+    // Simulate the player having moved away from the origin before the
+    // connection drops. Y is left at 0 in the input and asserted separately
+    // below — the physics solver immediately corrects it to the capsule's
+    // natural resting height once simulated, which is correct behavior, not
+    // something this test should fight.
+    let moved_to = Vec3::new(12.5, 0.0, -7.25);
+    let player_entity = server
+        .world_mut()
+        .query::<(Entity, &Player)>()
+        .iter(server.world())
+        .next()
+        .unwrap()
+        .0;
+    server
+        .world_mut()
+        .entity_mut(player_entity)
+        .insert(PhysicsPosition(moved_to));
+
+    let old_client = client
+        .world_mut()
+        .query_filtered::<Entity, With<RawClient>>()
+        .iter(client.world())
+        .next()
+        .unwrap();
+    client.world_mut().despawn(old_client);
+
+    let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 20007);
+    let (new_client_io, new_server_io) = CrossbeamIo::new_pair();
+    let se = server
+        .world_mut()
+        .query_filtered::<Entity, With<RawServer>>()
+        .iter(server.world())
+        .next()
+        .unwrap();
+    let new_link_of = server
+        .world_mut()
+        .spawn((LinkOf { server: se }, new_server_io, PeerAddr(addr)))
+        .id();
+    server.world_mut().trigger(LinkStart {
+        entity: new_link_of,
+    });
+    let new_client = client
+        .world_mut()
+        .spawn((
+            RawClient,
+            new_client_io,
+            PeerAddr(addr),
+            ReplicationReceiver,
+        ))
+        .id();
+    client.world_mut().trigger(Connect { entity: new_client });
+
+    // Reconnect with the same token.
+    send_identity_hello(&mut server, &mut client, "test-position-token");
+    let ok = wait_until(&mut server, &mut client, |s, _c| {
+        server_player_count(s) == 1
+    });
+    assert!(ok, "reconnect should produce exactly 1 player");
+
+    let pos = server
+        .world_mut()
+        .query::<&PlayerPosition>()
+        .iter(server.world())
+        .next()
+        .unwrap()
+        .0;
+    let horizontal_drift = (pos.xz() - moved_to.xz()).length();
+    assert!(
+        horizontal_drift < 0.1,
+        "reconnect must restore the last horizontal position ({}, {}), not \
+         respawn at the origin — got {pos}",
+        moved_to.x,
+        moved_to.z
     );
 }
 
