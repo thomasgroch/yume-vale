@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use core::net::SocketAddr;
-use game_protocol::{PRIVATE_KEY, PROTOCOL_ID};
+use game_protocol::{CLIENT_TIMEOUT_SECS, PRIVATE_KEY, PROTOCOL_ID};
 use lightyear::connection::client::Connect;
 use lightyear::netcode::{auth::Authentication, client_plugin::NetcodeConfig};
 use lightyear::prelude::client::NetcodeClient;
@@ -18,7 +18,7 @@ use super::transport_fallback::{TransportMode, derive_wasm_addr};
 
 pub(crate) fn netcode_config() -> NetcodeConfig {
     NetcodeConfig {
-        client_timeout_secs: 10,
+        client_timeout_secs: CLIENT_TIMEOUT_SECS,
         token_expire_secs: -1,
         ..Default::default()
     }

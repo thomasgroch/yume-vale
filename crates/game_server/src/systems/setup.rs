@@ -56,7 +56,8 @@ pub fn setup_server(
 
     let config = NetcodeConfig::default()
         .with_protocol_id(game_protocol::PROTOCOL_ID)
-        .with_key(game_protocol::PRIVATE_KEY);
+        .with_key(game_protocol::PRIVATE_KEY)
+        .with_client_timeout_secs(game_protocol::CLIENT_TIMEOUT_SECS);
 
     // UDP / Netcode listener (existing native transport)
     let udp_entity = commands
