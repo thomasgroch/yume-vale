@@ -173,6 +173,17 @@ pub fn handle_identity_hello(
                 }
             }
 
+            // Disconnect the stale client connection that previously owned
+            // this identity, if any — otherwise it's left holding a
+            // ClientPlayer pointing at the entity just despawned above,
+            // ghosted until its own connection times out.
+            if let Some(stale_client) = player_client_map.as_ref().and_then(|m| m.get(player_id)) {
+                if stale_client != entity {
+                    info!("Disconnecting stale client for reconnecting identity {player_id}");
+                    commands.entity(stale_client).try_despawn();
+                }
+            }
+
             let color = PlayerColor(next_color.0);
             next_color.0 = next_color.0.wrapping_add(1);
             let player_name = format!("Player {}", color.0 + 1);
