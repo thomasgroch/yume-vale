@@ -48,9 +48,9 @@ use crate::ui::{
 use crate::visuals::{
     BuildMode, ClientBonds, animate_foxes, attach_creature_visuals, attach_decoration_visuals,
     attach_player_visuals, build_controls_ui, handle_action_rejected, handle_bond_snapshot,
-    mark_local_player_visuals, send_wave_emote, setup_fox_animators, show_bond_display,
-    show_feed_prompt, spawn_plot_boundaries, sync_position_to_transform, toggle_build_mode,
-    trigger_wave_from_emote, update_plot_owner_indicators,
+    mark_local_player_visuals, predict_local_movement, send_wave_emote, setup_fox_animators,
+    show_bond_display, show_feed_prompt, spawn_plot_boundaries, sync_position_to_transform,
+    toggle_build_mode, trigger_wave_from_emote, update_plot_owner_indicators,
 };
 
 #[derive(Default)]
@@ -223,6 +223,7 @@ impl Plugin for ClientPlugin {
         app.add_systems(
             PostUpdate,
             (
+                predict_local_movement,
                 sync_position_to_transform,
                 animate_foxes,
                 follow_local_player,

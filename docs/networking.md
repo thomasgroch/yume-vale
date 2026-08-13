@@ -23,7 +23,9 @@ Operações: [deploy.md](deploy.md).
 Fallback: sem API WebTransport → WS imediato; WT disponível e **>8s** desconectado → WS permanente.<br>
 `ConnectionRejected` bloqueia retry/fallback e abre modal; `Voltar` libera nova tentativa.<br>
 Dev HTTP: WT com pin `certs/digest.txt`. Prod HTTPS: WT digest vazio (CA normal) → WSS fallback.<br>
-`YUME_SERVER_WS_URL` override compile-time. Vazio = host da página em WT:5001; fallback `wss://{host}/ws`.
+`YUME_SERVER_WS_URL` override compile-time. Vazio = host da página em WT:5001; fallback `wss://{host}/ws`.<br>
+Endereço WT não-parseável (host não é IP literal — `Authentication::Manual` exige `SocketAddr`) cai pra WS
+na hora, em vez de abandonar a conexão em silêncio; não depende mais só de `page_is_local` estar certo.
 
 ## 3. Conexão, Auth & Identidade
 
@@ -40,10 +42,22 @@ Connect (client_id via Authentication::Manual)
 | Plataforma | Armazenamento |
 |---|---|
 | Nativo | `dirs::config_dir()/yume-vale/identity.json` |
-| Browser | localStorage `yume_identity_token` |
+| Browser | sessionStorage `yume_identity_token` (por aba — `localStorage` seria compartilhado entre abas do mesmo navegador, fazendo duas abas colidirem na mesma identidade/PlayerId) |
 | Override | `YUME_IDENTITY_TOKEN` env (nativo) |
 
-Retry 2s; suspender/retomar reconecta e reautentica. Netcode timeout 10s. `PROTOCOL_ID` = `0x59c3_7a72` (u64, cabe em u32 sem perda).
+Reconectar com o mesmo token enquanto a conexão antiga ainda está viva desconecta a antiga
+(`PlayerClientMap`) em vez de deixá-la "fantasma" até o próprio timeout.
+
+Retry 2s (bloqueado enquanto a aba está oculta). Esconder/mostrar a aba **não** força
+desconexão/reconexão por si só — só pausa/retoma o retry; uma conexão saudável fica intocada.
+Se a conexão realmente morreu enquanto oculta, o cliente já a detecta como `Disconnected` e o
+retry assume ao voltar. Netcode timeout 10s (constante única `game_protocol::CLIENT_TIMEOUT_SECS`,
+usada nos dois lados — o `NetcodeConfig` do servidor não tem seu próprio valor pra divergir).
+`PROTOCOL_ID` = `0x59c3_7a72` (u64, cabe em u32 sem perda).
+
+Reconectar preserva a última posição conhecida (lida da entidade antiga antes do despawn e
+reaplicada tanto em `PlayerPosition` quanto no `Position` físico do avian) — não respawna mais
+na origem do mapa.
 
 ## 4. Mensagens & Replicação
 
@@ -62,13 +76,27 @@ Retry 2s; suspender/retomar reconecta e reautentica. Netcode timeout 10s. `PROTO
 
 | Componente | Modo | Interpolação |
 |---|---|---|
-| PlayerPosition | linear | Lightyear + EMA exponencial 18.0 |
+| PlayerPosition (jogadores remotos) | linear | Lightyear + chase exponencial 18.0 (`RENDER_SMOOTHING`) |
 | ResourceNodeState | linear | Lightyear |
 | CreatureState | linear | Lightyear |
 | PlayerColor | snap | — |
 | DecorationState | snap | — |
 
-PlayerColor: servidor atribui (round-robin), chega via replication, **não** no Welcome. Sem predição/reconciliação.
+PlayerColor: servidor atribui (round-robin), chega via replication, **não** no Welcome.
+
+**Predição local (jogador dono):** esperar `PlayerPosition` ir e voltar do servidor pra mover o
+próprio personagem lê como input lag — correto pra jogadores remotos (não dá pra saber pra onde
+eles vão antes do servidor confirmar), errado pro seu próprio. O cliente simula localmente:
+`predict_local_movement` (`crates/game_client/src/visuals/fox.rs`) integra velocidade horizontal
+a cada frame com `game_core::math::horizontal_velocity` — a mesma função, mesmas constantes
+(`WALK_ACCELERATION`/`AIR_ACCELERATION`) que o servidor usa em `apply_predicted_movement`, então
+as duas trajetórias raramente divergem — e puxa suavemente (`LOCAL_RECONCILE_RATE`, ~330ms) rumo
+à `PlayerPosition` replicada, que é a única coisa que sabe sobre colisão (paredes, decoração).
+Uma divergência grande (`LOCAL_SNAP_DISTANCE` = 2m — reconexão restaurando posição longe, por
+exemplo) snapa em vez de andar visivelmente até lá. Y (pulo/queda) não é predito — precisa de
+estado de solo/colisão que o cliente não tem — e continua seguindo o servidor via o mesmo chase
+de `sync_position_to_transform`. Sem rollback: é um atalho visual sobre o valor autoritativo do
+servidor, não predição-com-correção completa do Lightyear.
 
 ## 5. Timing, Autoridade & RTT
 
@@ -103,7 +131,6 @@ TLS: WT produção usa cadeia PEM + PKCS8/CA; WT dev fixa digest; WS não usa TL
 |---|---|---|---|
 | G1 | Chave dev Netcode no código | ConnectToken emitido pelo backend; segredo só no servidor | P0 |
 | G2 | Token de identidade time+PID | CSPRNG | P0 |
-| G3 | `PersistenceResource`/worker não iniciados | Conectar no startup | P1 |
 | G4 | `check_cert_rotation` não registrado | Registrar no scheduler | P1 |
 | G5 | Firewall IaC declara UDP 5001, falta 5000 | Declarar UDP 5000 | P1 |
 | G6 | HUD nativo rotula UDP como "WT" | Modelar como UDP | P2 |
@@ -119,5 +146,8 @@ TLS: WT produção usa cadeia PEM + PKCS8/CA; WT dev fixa digest; WS não usa TL
 - [ ] Manifest wasm real obrigatório (trunk)
 - [ ] Testar: browser padrão, `?transport=ws`, nativo
 - [ ] Validar RTT p50/p95 após tickrate
+- [ ] Se mexer em `horizontal_velocity`/`WALK_ACCELERATION`/`AIR_ACCELERATION` (`game_core::math`),
+      mudar só ali — cliente (predição local) e servidor (física autoritativa) leem a mesma
+      função; uma segunda cópia divergente é como isso já quebrou antes
 
 Comandos: `./yume-vale.sh {check|play|web|build-web}` e `./yume-vale.sh infra check`.

@@ -1,9 +1,8 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use game_core::arena::{ArenaColliderShape, arena_layout};
-use game_core::constants::{RUN_SPEED, WALK_SPEED};
 use game_core::decorations::{DecorationKind, decoration_layout};
-use game_core::math::Direction;
+pub use game_core::math::horizontal_velocity;
 use game_core::player_state::PlayerInput;
 use game_protocol::ReplicatedPlayerInput;
 
@@ -12,8 +11,6 @@ use crate::PlayerMovement;
 const PLAYER_RADIUS: f32 = 0.35;
 const PLAYER_SEGMENT_HEIGHT: f32 = 0.5;
 const PLAYER_HALF_HEIGHT: f32 = PLAYER_RADIUS + PLAYER_SEGMENT_HEIGHT * 0.5;
-const WALK_ACCELERATION: f32 = 40.0;
-const AIR_ACCELERATION: f32 = 10.0;
 const JUMP_HEIGHT: f32 = 1.5;
 const GRAVITY: f32 = 9.81;
 
@@ -47,24 +44,6 @@ impl Default for PlayerPhysicsBundle {
             jump_latch: JumpLatch::default(),
         }
     }
-}
-
-pub fn horizontal_velocity(
-    current: Vec3,
-    direction: Direction,
-    running: bool,
-    grounded: bool,
-    dt: f32,
-) -> Vec3 {
-    let speed = if running { RUN_SPEED } else { WALK_SPEED };
-    let target = direction.0 * speed;
-    let current_horizontal = Vec3::new(current.x, 0.0, current.z);
-    let acceleration = if grounded {
-        WALK_ACCELERATION
-    } else {
-        AIR_ACCELERATION
-    };
-    current_horizontal.move_towards(target, acceleration * dt)
 }
 
 type MovingPlayers<'w, 's> = Query<
@@ -157,25 +136,5 @@ pub fn spawn_static_world_colliders(commands: &mut Commands) {
             }
             DecorationKind::Flower => {}
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn grounded_acceleration_reaches_walk_target() {
-        let direction = Direction::from_xz(1.0, 0.0).unwrap();
-        let velocity = horizontal_velocity(Vec3::ZERO, direction, false, true, 1.0);
-        assert_eq!(velocity, Vec3::X * WALK_SPEED);
-    }
-
-    #[test]
-    fn air_acceleration_is_lower_than_ground() {
-        let direction = Direction::from_xz(1.0, 0.0).unwrap();
-        let ground = horizontal_velocity(Vec3::ZERO, direction, true, true, 0.1);
-        let air = horizontal_velocity(Vec3::ZERO, direction, true, false, 0.1);
-        assert!(ground.length() > air.length());
     }
 }

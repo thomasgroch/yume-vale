@@ -1,4 +1,4 @@
-use crate::constants::GROUND_Y;
+use crate::constants::{AIR_ACCELERATION, GROUND_Y, RUN_SPEED, WALK_ACCELERATION, WALK_SPEED};
 use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ pub struct Position(pub Vec3);
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Velocity(pub Vec3);
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Direction(pub Vec3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -140,10 +140,56 @@ pub fn snap_to_ground(pos: Vec3, ground_y: Option<f32>) -> Vec3 {
     Vec3::new(pos.x, y, pos.z)
 }
 
+/// Accelerates a horizontal (Y is ignored/zeroed) velocity toward the target
+/// speed implied by `direction`/`running`, capped by grounded/airborne
+/// acceleration. The single source of truth for "how a character speeds up,
+/// slows down, and changes direction" — used identically by the server's
+/// authoritative physics and the client's local movement prediction, so
+/// their trajectories agree and prediction doesn't constantly correct itself.
+pub fn horizontal_velocity(
+    current: Vec3,
+    direction: Direction,
+    running: bool,
+    grounded: bool,
+    dt: f32,
+) -> Vec3 {
+    let speed = if running { RUN_SPEED } else { WALK_SPEED };
+    let target = direction.0 * speed;
+    let current_horizontal = Vec3::new(current.x, 0.0, current.z);
+    let acceleration = if grounded {
+        WALK_ACCELERATION
+    } else {
+        AIR_ACCELERATION
+    };
+    move_towards(current_horizontal, target, acceleration * dt)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use glam::Vec3;
+
+    #[test]
+    fn horizontal_velocity_grounded_acceleration_reaches_walk_target() {
+        let direction = Direction::from_xz(1.0, 0.0).unwrap();
+        let velocity = horizontal_velocity(Vec3::ZERO, direction, false, true, 1.0);
+        assert_eq!(velocity, Vec3::X * WALK_SPEED);
+    }
+
+    #[test]
+    fn horizontal_velocity_air_acceleration_is_lower_than_ground() {
+        let direction = Direction::from_xz(1.0, 0.0).unwrap();
+        let ground = horizontal_velocity(Vec3::ZERO, direction, true, true, 0.1);
+        let air = horizontal_velocity(Vec3::ZERO, direction, true, false, 0.1);
+        assert!(ground.length() > air.length());
+    }
+
+    #[test]
+    fn horizontal_velocity_ignores_input_y() {
+        let direction = Direction::from_xz(0.0, 1.0).unwrap();
+        let velocity = horizontal_velocity(Vec3::new(1.0, 99.0, 2.0), direction, false, true, 1.0);
+        assert_eq!(velocity.y, 0.0);
+    }
 
     #[test]
     fn position_new_and_access() {
