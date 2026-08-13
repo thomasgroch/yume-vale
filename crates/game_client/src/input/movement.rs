@@ -12,6 +12,13 @@ use crate::touch::movement_touch_id;
 #[derive(Resource, Default)]
 pub struct InputState {
     pub tick: u32,
+    /// This frame's merged keyboard/touch movement input — the exact same
+    /// value just sent to the server. Read by `predict_local_movement` so
+    /// the local player's own character responds to input immediately
+    /// instead of waiting for a round trip, without a second, potentially
+    /// divergent copy of the input-gathering logic.
+    pub direction: Direction,
+    pub running: bool,
 }
 
 /// Movement rotated by camera `yaw`: W = away from camera, D = screen-right.
@@ -79,6 +86,8 @@ pub fn gather_input(
         (movement, run)
     };
     state.tick = state.tick.wrapping_add(1);
+    state.direction = movement;
+    state.running = run;
 
     let input = ClientInput {
         tick: state.tick,
@@ -229,7 +238,10 @@ mod tests {
 
     #[test]
     fn input_state_tick_wraps() {
-        let mut state = InputState { tick: u32::MAX };
+        let mut state = InputState {
+            tick: u32::MAX,
+            ..Default::default()
+        };
         state.tick = state.tick.wrapping_add(1);
         assert_eq!(state.tick, 0);
     }

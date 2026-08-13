@@ -2,11 +2,13 @@ use bevy::animation::graph::{AnimationGraphHandle, AnimationNodeIndex};
 use bevy::prelude::*;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use game_core::constants::{RUN_SPEED, WALK_SPEED};
+use game_core::math::horizontal_velocity;
 use game_protocol::{PlayerColor, PlayerPosition};
 use lightyear::prelude::{Interpolated, Predicted};
 use player::{LocalPlayer, Player};
 
 use crate::connection::LocalPlayerId;
+use crate::input::InputState;
 
 /// Duration of the wave animation clip in seconds.
 const WAVE_DURATION: f32 = 2.0;
@@ -33,6 +35,19 @@ const RENDER_SMOOTHING: f32 = 18.0;
 /// sits at float_height (0.6) above the ground, while the fox GLB's origin is
 /// at its feet — without this pivot the fox would render 0.6m in the air.
 const FOX_GROUND_OFFSET_Y: f32 = -0.6;
+/// How strongly the local player's predicted horizontal position is pulled
+/// toward the server's replicated `PlayerPosition` every frame (~330ms time
+/// constant). Slow enough to be invisible during normal walking — the
+/// server agrees with local prediction almost all the time, since both run
+/// the identical `horizontal_velocity` — but fast enough to erase drift from
+/// the one thing local prediction can't see: collision (walls, decorations).
+/// See `predict_local_movement`.
+const LOCAL_RECONCILE_RATE: f32 = 3.0;
+/// If local prediction and the server disagree by more than this (world
+/// units), snap instead of reconciling smoothly — a walk-back animation
+/// across the whole map (e.g. after the position-preserving reconnect) reads
+/// as far more broken than an instant snap would.
+const LOCAL_SNAP_DISTANCE: f32 = 2.0;
 
 /// Which animation clip the fox should be playing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -83,6 +98,14 @@ pub struct FoxAnimation {
     /// Seconds remaining in the wave animation, or `None` if not waving.
     pub(crate) wave_timer: Option<f32>,
 }
+
+/// Running horizontal velocity for the local player's client-side movement
+/// prediction (see `predict_local_movement`). Only meaningful on the
+/// `Predicted` entity; harmless (never read) on `Interpolated` ones — kept
+/// on every player entity rather than conditionally to avoid special-casing
+/// the bundle in `attach_player_visuals`.
+#[derive(Component, Default)]
+pub struct PredictedVelocity(Vec3);
 
 type UnvisualizedPlayers<'w, 's> = Query<
     'w,
@@ -149,6 +172,7 @@ pub fn attach_player_visuals(
                 animator: None,
                 wave_timer: None,
             },
+            PredictedVelocity::default(),
         ));
 
         if is_local {
@@ -374,27 +398,23 @@ type InterpolatedPlayers<'w, 's> = Query<
     'w,
     's,
     (&'static PlayerPosition, &'static mut Transform),
-    Or<(With<Interpolated>, With<Predicted>)>,
+    (With<Interpolated>, Without<Predicted>),
 >;
 
-/// Copies `PlayerPosition` → `Transform.translation` for both interpolated
-/// (remote) and predicted (local) players, chasing the target value with an
-/// exponential smoothing (`RENDER_SMOOTHING`) instead of snapping. Linear
-/// 30Hz interpolation advances in bursts whenever the velocity changes
-/// (accelerate/stop/turn), and teleports when the timeline finishes syncing
-/// after spawn — the chase absorbs both into continuous motion. On network
-/// underruns the fox simply decelerates and resumes smoothly.
+/// Copies `PlayerPosition` → `Transform.translation` for interpolated
+/// (remote) players, chasing the target value with an exponential smoothing
+/// (`RENDER_SMOOTHING`) instead of snapping. Linear 30Hz interpolation
+/// advances in bursts whenever the velocity changes (accelerate/stop/turn),
+/// and teleports when the timeline finishes syncing after spawn — the chase
+/// absorbs both into continuous motion. On network underruns the fox simply
+/// decelerates and resumes smoothly.
 ///
-/// There is no client-side physics (the `player` crate's `physics` feature
-/// is server-only — see `crates/features/player/Cargo.toml`), so the local
-/// player's own `Predicted` entity has no other system driving its
-/// `Transform`. Without matching `Predicted` here too, the local player's
-/// character freezes at its spawn position forever — `attach_player_visuals`
-/// seeds `Transform` once, but this system is the only thing that ever
-/// updates it again, and the camera (`follow_local_player`) reads the same
-/// frozen `Transform`, so the whole view appears static. This is the same
-/// `Interpolated`-only filter bug as the one fixed for `attach_player_visuals`
-/// in 1cccb84, just in the sibling system that fix didn't touch.
+/// The *local* player's own `Predicted` entity is deliberately excluded —
+/// see `predict_local_movement`, which drives it instead. Waiting on
+/// server-replicated, network-round-trip-bound `PlayerPosition` is correct
+/// for someone else's character (you can't know where they're going before
+/// the server says so), but applied to your *own* character it reads as
+/// input lag: every keypress waits a full round trip before anything moves.
 /// Runs in PostUpdate, chained before `animate_foxes`/`follow_local_player`.
 pub fn sync_position_to_transform(time: Res<Time>, mut query: InterpolatedPlayers) {
     let dt = time.delta_secs();
@@ -403,6 +423,67 @@ pub fn sync_position_to_transform(time: Res<Time>, mut query: InterpolatedPlayer
         let delta = pos.0 - transform.translation;
         transform.translation += delta * t;
     }
+}
+
+type PredictedLocalPlayer<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static PlayerPosition,
+        &'static mut Transform,
+        &'static mut PredictedVelocity,
+    ),
+    With<Predicted>,
+>;
+
+/// Drives the local player's own character directly from local input,
+/// instead of waiting for the server to confirm it moved.
+///
+/// Integrates horizontal (X/Z) velocity every frame with the exact same
+/// `horizontal_velocity` acceleration curve the server applies
+/// authoritatively — so the two trajectories agree almost all the time, and
+/// the gentle continuous pull toward the server's replicated `PlayerPosition`
+/// (`LOCAL_RECONCILE_RATE`) stays imperceptible during normal walking. That
+/// pull exists because local prediction has no idea about collision (walls,
+/// decorations) — only the server does — so it's what erases the drift from
+/// a blocked movement the client predicted through. A disagreement bigger
+/// than `LOCAL_SNAP_DISTANCE` (e.g. the position-preserving reconnect
+/// putting the character somewhere else entirely) snaps instead of visibly
+/// walking there.
+///
+/// Vertical motion (jumping, falling) is intentionally *not* predicted here:
+/// it needs grounded/collision state the client doesn't have, so Y keeps
+/// tracking the server via the same chase used for remote players.
+pub fn predict_local_movement(
+    time: Res<Time>,
+    input: Res<InputState>,
+    mut query: PredictedLocalPlayer,
+) {
+    let dt = time.delta_secs();
+    if dt <= 0.0 {
+        return;
+    }
+    let Ok((server_pos, mut transform, mut velocity)) = query.single_mut() else {
+        return;
+    };
+
+    let horizontal_drift = (transform.translation - server_pos.0).with_y(0.0).length();
+    if horizontal_drift > LOCAL_SNAP_DISTANCE {
+        transform.translation.x = server_pos.0.x;
+        transform.translation.z = server_pos.0.z;
+        velocity.0 = Vec3::ZERO;
+    }
+
+    velocity.0 = horizontal_velocity(velocity.0, input.direction, input.running, true, dt);
+    transform.translation.x += velocity.0.x * dt;
+    transform.translation.z += velocity.0.z * dt;
+
+    let correction = 1.0 - (-LOCAL_RECONCILE_RATE * dt).exp();
+    transform.translation.x += (server_pos.0.x - transform.translation.x) * correction;
+    transform.translation.z += (server_pos.0.z - transform.translation.z) * correction;
+
+    let y_smoothing = 1.0 - (-RENDER_SMOOTHING * dt).exp();
+    transform.translation.y += (server_pos.0.y - transform.translation.y) * y_smoothing;
 }
 
 #[cfg(test)]
@@ -424,6 +505,8 @@ mod tests {
         assert_eq!(RENDER_SMOOTHING, 18.0);
         assert_eq!(FOX_GROUND_OFFSET_Y, -0.6);
         assert_eq!(WAVE_DURATION, 2.0);
+        assert_eq!(LOCAL_RECONCILE_RATE, 3.0);
+        assert_eq!(LOCAL_SNAP_DISTANCE, 2.0);
     }
 
     #[test]
@@ -489,6 +572,7 @@ mod tests {
                 animate_foxes,
                 mark_local_player_visuals,
                 sync_position_to_transform,
+                predict_local_movement,
             ),
         );
     }
@@ -1189,16 +1273,13 @@ mod tests {
         );
     }
 
-    /// The real server never sends `Interpolated` to the owning client —
-    /// only `Predicted` (see auth.rs's PredictionTarget/InterpolationTarget
-    /// split, same as `attach_player_visuals_marks_local_player_when_predicted`
-    /// above). This regression-tests the actual production shape: without
-    /// matching `Predicted` in `sync_position_to_transform`, the local
-    /// player's `Transform` is seeded once at spawn by `attach_player_visuals`
-    /// and never updated again as `PlayerPosition` keeps changing — the
-    /// character (and the camera that follows it) freezes in place forever.
+    /// `sync_position_to_transform` must leave the local (`Predicted`)
+    /// player's `Transform` alone — `predict_local_movement` drives it
+    /// instead (see the tests below). If this regresses back to matching
+    /// `Predicted`, the two systems fight over the same `Transform` every
+    /// frame and the local player's movement becomes visibly jittery.
     #[test]
-    fn sync_position_converges_for_predicted_local_player() {
+    fn sync_position_to_transform_ignores_predicted_entity() {
         let mut app = App::new();
         app.init_resource::<Time>();
         app.add_systems(Update, sync_position_to_transform);
@@ -1222,10 +1303,119 @@ mod tests {
         }
 
         let t = app.world().get::<Transform>(entity).unwrap();
+        assert_eq!(
+            t.translation,
+            Vec3::ZERO,
+            "sync_position_to_transform must not touch a Predicted entity"
+        );
+    }
+
+    fn predict_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<Time>();
+        app.init_resource::<InputState>();
+        app.add_systems(Update, predict_local_movement);
+        app
+    }
+
+    /// The whole point of local prediction: the character starts moving the
+    /// instant input says so, without waiting for `PlayerPosition` (the
+    /// server-round-trip-bound value, held fixed at the origin here) to
+    /// change at all.
+    #[test]
+    fn predict_local_movement_responds_immediately_to_input() {
+        let mut app = predict_app();
+        app.world_mut().resource_mut::<InputState>().direction =
+            game_core::math::Direction::from_xz(1.0, 0.0).unwrap();
+
+        app.world_mut().spawn((
+            PlayerPosition(Vec3::ZERO),
+            Transform::from_translation(Vec3::ZERO),
+            PredictedVelocity::default(),
+            Predicted,
+        ));
+
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_secs_f32(0.2));
+        app.update();
+
+        let t = app
+            .world_mut()
+            .query_filtered::<&Transform, With<Predicted>>()
+            .single(app.world())
+            .unwrap();
         assert!(
-            (t.translation.x - target.x).abs() < 0.1,
-            "predicted local player's transform must track PlayerPosition, expected ~{}, got {:?}",
-            target.x,
+            t.translation.x > 0.0,
+            "expected immediate movement toward +X, got {:?}",
+            t.translation
+        );
+    }
+
+    /// With no input at all, the predicted position should still settle onto
+    /// wherever the server says it is — this is what erases drift from
+    /// things local prediction can't see (collision).
+    #[test]
+    fn predict_local_movement_reconciles_toward_server_position_when_idle() {
+        let mut app = predict_app();
+
+        let server_pos = Vec3::new(1.0, 0.0, 0.0);
+        app.world_mut().spawn((
+            PlayerPosition(server_pos),
+            Transform::from_translation(Vec3::ZERO),
+            PredictedVelocity::default(),
+            Predicted,
+        ));
+
+        for _ in 0..60 {
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs_f32(0.05));
+            app.update();
+        }
+
+        let t = app
+            .world_mut()
+            .query_filtered::<&Transform, With<Predicted>>()
+            .single(app.world())
+            .unwrap();
+        assert!(
+            (t.translation.x - server_pos.x).abs() < 0.05,
+            "expected convergence to server position ~{}, got {:?}",
+            server_pos.x,
+            t.translation
+        );
+    }
+
+    /// A large disagreement (reconnect restoring a distant last-known
+    /// position, a teleport) must snap, not play a walk-back animation
+    /// across the map.
+    #[test]
+    fn predict_local_movement_snaps_on_large_divergence() {
+        let mut app = predict_app();
+
+        let server_pos = Vec3::new(500.0, 0.0, 0.0);
+        app.world_mut().spawn((
+            PlayerPosition(server_pos),
+            Transform::from_translation(Vec3::ZERO),
+            PredictedVelocity::default(),
+            Predicted,
+        ));
+
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_secs_f32(0.05));
+        app.update();
+
+        let t = app
+            .world_mut()
+            .query_filtered::<&Transform, With<Predicted>>()
+            .single(app.world())
+            .unwrap();
+        assert!(
+            (t.translation.x - server_pos.x).abs() < 1.0,
+            "expected an immediate snap near {}, got {:?}",
+            server_pos.x,
             t.translation
         );
     }

@@ -19,6 +19,17 @@ pub const WALK_SPEED: f32 = 5.0;
 /// Run speed (units per second).
 pub const RUN_SPEED: f32 = 10.0;
 
+/// Horizontal acceleration while grounded (units per second squared).
+/// Shared by the server's authoritative physics and the client's local
+/// movement prediction — they must agree, or the client's prediction would
+/// constantly fight visible corrections from the server.
+pub const WALK_ACCELERATION: f32 = 40.0;
+
+/// Horizontal acceleration while airborne (units per second squared) — lower
+/// than `WALK_ACCELERATION` so mid-air direction changes feel sluggish, the
+/// way real momentum does.
+pub const AIR_ACCELERATION: f32 = 10.0;
+
 /// Default capacity of a player's inventory.
 pub const INVENTORY_CAPACITY: usize = 24;
 
