@@ -72,7 +72,12 @@ pub(crate) fn handle_transport_fallback(
 }
 
 /// Spawn a client entity with WebSocket IO (either local WS or production WSS).
-fn spawn_ws_client(
+///
+/// Exposed to `transport::start_connection` so a WebTransport attempt whose
+/// address can't even be parsed (see its call site) can fall back to WS
+/// immediately instead of silently leaving the client with no connection
+/// entity at all.
+pub(crate) fn spawn_ws_client(
     commands: &mut Commands,
     config: &crate::config::ClientConfig,
     state: &TransportState,

@@ -168,10 +168,24 @@ pub(crate) fn start_connection(
                 None => config.web_transport_addr.clone(),
             };
             let addr_string = derive_wasm_addr(&template, is_local, page_host, "5001");
-            let Some(addr) = parse_addr(&addr_string, "web_transport_addr") else {
-                return;
-            };
-            let Some(client) = build_netcode_client(addr, cid, &netcode_config) else {
+
+            // A WT address that fails to parse (e.g. a DNS hostname —
+            // Authentication::Manual needs a literal SocketAddr, so this
+            // isn't recoverable) or a NetcodeClient that fails to build must
+            // not leave the client with no connection entity at all: fall
+            // back to WS immediately instead of silently giving up. This
+            // used to depend entirely on `page_is_local` being computed
+            // correctly upstream (select_transport_mode); now it's
+            // self-healing regardless of whether that flag was right.
+            let wt_client = parse_addr(&addr_string, "web_transport_addr")
+                .and_then(|addr| build_netcode_client(addr, cid, &netcode_config).zip(Some(addr)));
+            let Some((client, addr)) = wt_client else {
+                warn!(
+                    "WebTransport address unusable ({addr_string:?}) — \
+                     falling back to WebSocket"
+                );
+                transport.mode = TransportMode::WebSocket;
+                super::transport_fallback::spawn_ws_client(commands, config, transport);
                 return;
             };
             let digest = if is_local {
