@@ -199,6 +199,11 @@ mod web;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use web::handle_transport_fallback;
 
+/// Re-exported for `transport::start_connection`'s WT-address-unparseable
+/// fallback (see its call site).
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web::spawn_ws_client;
+
 /// Native no-op (UDP is used instead of WT/WS).
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn handle_transport_fallback(
